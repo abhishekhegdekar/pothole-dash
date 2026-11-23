@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#15161a" />
+    <title>Pothole Dash</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game" aria-label="Pothole Dash game"></canvas>
+
+      <div id="hud" class="hud is-hidden">
+        <div class="hud-left">
+          <div class="hud-label">Distance</div>
+          <div id="hudDist" class="hud-dist">0 m</div>
+        </div>
+        <div class="hud-right">
+          <div id="hudDents" class="dents" role="img" aria-label="3 of 3 dents left"></div>
+          <button id="btnPause" class="icon-btn" type="button" aria-label="Pause">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <section id="menu" class="overlay">
+        <div class="card">
+          <div class="plate">
+            <span class="plate-small">City Streets</span>
+            <h1>Pothole<br />Dash</h1>
+          </div>
+          <p class="lede">Drive the auto. Dodge the potholes. Three dents and you're walking home.</p>
+          <button id="btnStart" class="btn" type="button">Start driving</button>
+          <p id="menuBest" class="best"></p>
+          <dl class="controls">
+            <div><dt>Phone</dt><dd>Swipe, or tap left / right</dd></div>
+            <div><dt>Keyboard</dt><dd>← → or A / D, P to pause</dd></div>
+          </dl>
+          <button id="btnMute" class="link-btn" type="button" aria-pressed="true">Sound on</button>
+          <div class="truck-art" aria-hidden="true">Horn OK Please</div>
+        </div>
+      </section>
+
+      <section id="paused" class="overlay" hidden>
+        <div class="card card-small">
+          <h2>Paused</h2>
+          <p class="lede">Chai break. Tap to keep driving.</p>
+          <button id="btnResume" class="btn" type="button">Resume</button>
+        </div>
+      </section>
+
+      <section id="over" class="overlay" hidden>
+        <div class="card card-small">
+          <h2 id="overTitle">Auto broke down!</h2>
+          <div class="final">
+            <span class="final-label">You drove</span>
+            <span id="overDist" class="final-dist">0 m</span>
+            <span id="overBadge" class="badge" hidden>Personal best</span>
+          </div>
+          <p id="overBest" class="best"></p>
+          <button id="btnAgain" class="btn" type="button">Drive again</button>
+          <p class="hint">Space or Enter also restarts</p>
+        </div>
+      </section>
+
+      <section id="error" class="overlay" hidden>
+        <div class="card card-small">
+          <h2>Something went wrong</h2>
+          <p class="lede">The game hit an error. Restarting usually fixes it.</p>
+          <button id="btnReload" class="btn" type="button">Restart</button>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

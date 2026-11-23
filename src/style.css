@@ -1,0 +1,97 @@
+/* Layout: full-screen canvas, HUD across the top, overlays centred as painted road-sign cards.
+   One deliberate dark look (it is a game screen), so colours are fixed rather than themed. */
+:root {
+  --ink: #15161a;
+  --asphalt: #26272d;
+  --saffron: #ffc21a;
+  --saffron-deep: #e0a200;
+  --chalk: #f7f2e7;
+  --muted: #b9b3a6;
+  --signal: #e5432f;
+  --leaf: #1f8a4f;
+  --display: 'Arial Black', 'Segoe UI Black', 'Helvetica Neue', system-ui, sans-serif;
+  --body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--ink); color: var(--chalk); overflow: hidden; overscroll-behavior: none; }
+body { font-family: var(--body); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+
+#app { position: fixed; inset: 0; overflow: hidden; touch-action: none; background: var(--ink); }
+#game { display: block; position: absolute; inset: 0; }
+
+.hud {
+  position: absolute; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+  pointer-events: none; transition: opacity 0.2s;
+}
+.hud.is-hidden { opacity: 0; }
+.hud-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.hud-dist { font-family: var(--display); font-weight: 900; font-size: clamp(26px, 7vw, 38px); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); }
+.hud-right { display: flex; align-items: center; gap: 12px; }
+.dents { display: flex; gap: 6px; }
+.dent { width: 18px; height: 22px; border-radius: 6px 6px 4px 4px; background: var(--saffron); border: 2px solid var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.4); transition: transform 0.2s, background 0.2s; }
+.dent.is-lost { background: transparent; border-color: rgba(247, 242, 231, 0.45); transform: scale(0.85); }
+.icon-btn {
+  pointer-events: auto; width: 44px; height: 44px; border-radius: 12px; border: 2px solid rgba(247, 242, 231, 0.25);
+  background: rgba(21, 22, 26, 0.6); color: var(--chalk); display: grid; place-items: center; cursor: pointer;
+}
+.icon-btn svg { fill: currentColor; }
+.hud.is-hidden .icon-btn { pointer-events: none; }
+
+.overlay {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 16px) max(16px, env(safe-area-inset-left, 0px));
+  background: radial-gradient(ellipse at center, rgba(21, 22, 26, 0.35), rgba(21, 22, 26, 0.8));
+  animation: fade 0.2s ease-out;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.card {
+  width: min(100%, 380px); display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+  padding: 24px 20px 18px; border-radius: 20px; background: rgba(21, 22, 26, 0.92); border: 2px solid rgba(255, 194, 26, 0.35);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.card-small { gap: 12px; }
+.plate {
+  background: var(--saffron); color: var(--ink); border: 4px solid var(--ink); outline: 3px solid var(--saffron);
+  border-radius: 14px; padding: 10px 22px 14px; transform: rotate(-2deg); box-shadow: 0 6px 0 var(--saffron-deep);
+}
+.plate-small { display: block; font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; }
+h1 { margin: 2px 0 0; font-family: var(--display); font-size: clamp(40px, 13vw, 58px); line-height: 0.9; letter-spacing: -0.02em; text-transform: uppercase; }
+h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 28px; color: var(--saffron); text-wrap: balance; }
+.lede { margin: 0; color: var(--chalk); font-size: 15px; line-height: 1.45; max-width: 30ch; text-wrap: balance; }
+.btn {
+  font-family: var(--display); font-weight: 900; font-size: 20px; letter-spacing: 0.02em; color: var(--ink); background: var(--saffron);
+  border: none; border-radius: 14px; padding: 14px 28px; min-width: 220px; cursor: pointer;
+  box-shadow: 0 5px 0 var(--saffron-deep); transition: transform 0.08s, box-shadow 0.08s;
+}
+.btn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--saffron-deep); }
+.btn:focus-visible, .icon-btn:focus-visible, .link-btn:focus-visible { outline: 3px solid var(--chalk); outline-offset: 3px; }
+.best { margin: 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.controls { margin: 4px 0 0; display: grid; gap: 6px; width: 100%; font-size: 13px; }
+.controls div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: 10px; background: rgba(247, 242, 231, 0.06); }
+.controls dt { font-weight: 700; color: var(--saffron); letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; align-self: center; }
+.controls dd { margin: 0; color: var(--chalk); text-align: right; }
+.link-btn { background: none; border: none; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; padding: 6px; }
+.truck-art {
+  font-family: var(--display); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; padding: 6px 14px; border-radius: 999px;
+  font-weight: 900; color: var(--saffron); background: var(--ink); border: 3px solid transparent;
+  border-image: repeating-linear-gradient(90deg, var(--signal) 0 10px, var(--saffron) 10px 20px, var(--leaf) 20px 30px) 3;
+}
+.final { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.final-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.final-dist { font-family: var(--display); font-weight: 900; font-size: 52px; line-height: 1; font-variant-numeric: tabular-nums; }
+.badge { background: var(--leaf); color: var(--chalk); font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
+.hint { margin: 0; color: var(--muted); font-size: 12px; }
+[hidden] { display: none !important; }
+
+@media (max-height: 560px) {
+  .card { gap: 8px; padding: 14px 16px 12px; }
+  .controls, .truck-art { display: none; }
+  h1 { font-size: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay { animation: none; }
+  .btn, .dent { transition: none; }
+}
