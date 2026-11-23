@@ -36,6 +36,18 @@ export const BALANCE = {
   /** Hitboxes are this fraction of the drawn size, so near-touches feel fair. */
   hitboxScale: 0.78,
 
+  /** A pass this close (metres, edge to edge) without touching counts as a near miss. */
+  nearMissGap: 0.6,
+  /** Points per near miss, multiplied by the current combo. */
+  nearMissPoints: 10,
+  /** Seconds a combo stays alive without another near miss. */
+  comboWindow: 3,
+  /** Distance milestones that get a banner; after the last one, every `milestoneStep`. */
+  milestones: [250, 500, 1000],
+  milestoneStep: 500,
+  /** How fast the auto skids to a stop after the final crash (m/s per second). */
+  crashDecel: 16,
+
   /** Particles, rows etc. are kept in fixed pools of this size. */
   obstaclePool: 48,
 } as const;
