@@ -2,6 +2,9 @@ import './style.css';
 import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
 import { STORY_ROAD, STORY_TEST_RULES } from './data/story';
+import { FootWorld } from './systems/foot';
+import { FootControls } from './core/footControls';
+import { Foot3D } from './render3d/foot3d';
 import { VEHICLES, VEHICLE_ORDER, isVehicleId, type VehicleDef } from './data/vehicles';
 import { isMapId, MAP_ORDER, MAPS, type MapDef } from './data/maps';
 import { Sfx } from './audio/sfx';
@@ -103,6 +106,11 @@ function boot(): void {
     hudFuel: el('hudFuel'),
     hudFuelFill: el('hudFuelFill'),
     hudCoinDot: el('hudCoinDot'),
+    hudHp: el('hudHp'),
+    hudHpFill: el('hudHpFill'),
+    hudLabel: el('hudLabel'),
+    footPad: el('footPad'),
+    storyPick: el('storyPick'),
   };
 
   const store = new SaveStore();
@@ -126,13 +134,17 @@ function boot(): void {
     renderer = new Renderer(fresh, world);
   }
   renderer.setVehicle?.(vehicle.id);
+  // On-foot sections draw with the same WebGL renderer (not available in the 2D fallback).
+  const foot = new FootWorld(newSeed());
+  const foot3d = renderer instanceof Renderer3D ? new Foot3D(renderer.webgl, foot, app) : null;
+  const footIn = new FootControls(el('footPad'), el('stickBase'), el('stickKnob'), el('btnAttack'));
   const input = new Input(el<HTMLCanvasElement>('game'));
   input.bindPedal(el('pedalGas'), 'gas');
   input.bindPedal(el('pedalBrake'), 'brake');
 
   let state: State = 'menu';
   /** Free Run or the Story Mode test drive. `road` is the map being driven right now. */
-  let mode: 'free' | 'story' = 'free';
+  let mode: 'free' | 'story' | 'foot' = 'free';
   let road: MapDef = map;
   let garageOpen = false;
   let overReady = false;
@@ -156,7 +168,10 @@ function boot(): void {
     node.classList.add(cls);
   };
 
-  const resize = (): void => renderer.resize(app.clientWidth, app.clientHeight, window.devicePixelRatio);
+  const resize = (): void => {
+    renderer.resize(app.clientWidth, app.clientHeight, window.devicePixelRatio);
+    foot3d?.resize(app.clientWidth, app.clientHeight);
+  };
   resize();
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
@@ -187,9 +202,10 @@ function boot(): void {
   renderWallet();
 
   const show = (which: HTMLElement | null): void => {
-    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage]) o.hidden = o !== which;
+    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage, ui.storyPick]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
-    ui.pedals.classList.toggle('is-hidden', which !== null || state === 'menu' || state === 'over');
+    ui.pedals.classList.toggle('is-hidden', mode === 'foot' || which !== null || state === 'menu' || state === 'over');
+    ui.footPad.hidden = mode !== 'foot' || which !== null || state === 'menu' || state === 'over';
   };
 
   const showBeat = (beat: number): void => {
@@ -215,6 +231,12 @@ function boot(): void {
     ui.banner.hidden = true;
     world.reset(newSeed());
     renderer.resetRun();
+    if (mode === 'foot') {
+      foot.reset(newSeed());
+      foot.weapon = save.scrap >= 40 ? 'machete' : 'bat';
+      footIn.reset();
+      foot3d?.hidePopups();
+    }
     overReady = false;
     shownDents = shownScore = shownCombo = shownMeters = -1;
     beginCountdown();
@@ -248,11 +270,14 @@ function boot(): void {
     state = 'over';
     const d = world.dist;
     const score = world.score;
-    const story = mode === 'story';
+    const story = mode !== 'free';
     const isBest = !story && score > save.bestScore;
     save.runs++;
     if (isBest) save.bestScore = score;
-    if (story) {
+    if (mode === 'foot') {
+      // Escaping keeps the scrap and adds a bonus; going down still keeps half of it.
+      save.scrap += foot.escaped ? foot.scrap + 15 : Math.floor(foot.scrap / 2);
+    } else if (story) {
       save.scrap += world.coinCount;
     } else {
       save.points += score;
@@ -279,6 +304,19 @@ function boot(): void {
       if (score > 0) earned.push(`+${fmt(score)} points for Story Mode`);
     }
     ui.overEarned.textContent = earned.join(' · ');
+    const labels = mode === 'foot' ? ['You found', 'Zombies', 'Health', 'Scrap'] : ['You drove', 'Score', 'Near misses', 'Best combo'];
+    ['overFinalLabel', 'overL1', 'overL2', 'overL3'].forEach((id, i) => (el(id).textContent = labels[i]!));
+    ui.btnAgain.textContent = mode === 'foot' ? 'Go in again' : 'Drive again';
+    if (mode === 'foot') {
+      ui.overDist.textContent = `${foot.found} of ${foot.level.goal} supplies`;
+      ui.overScore.textContent = String(foot.kills);
+      ui.overNear.textContent = `${Math.round(foot.hp)}%`;
+      ui.overCombo.textContent = String(foot.scrap);
+      ui.overBadge.hidden = true;
+      ui.overBest.textContent = '';
+      ui.overTitle.textContent = foot.escaped ? 'Back to the SUV!' : 'Raj is down. Tanvi pulls him out.';
+      ui.overEarned.textContent = foot.escaped ? `+${foot.scrap + 15} scrap (+15 for getting out)` : `+${Math.floor(foot.scrap / 2)} scrap`;
+    }
     renderWallet();
     overTimer = window.setTimeout(() => {
       overReady = true;
@@ -300,19 +338,30 @@ function boot(): void {
     renderer.resetRun();
   };
   /** Sets up the world, 3D view and HUD for Free Run or Story Mode. */
-  const setMode = (next: 'free' | 'story'): void => {
+  const setMode = (next: 'free' | 'story' | 'foot'): void => {
     if (next === mode) return;
+    const wasFree = mode === 'free';
     mode = next;
-    road = mode === 'story' ? STORY_ROAD : map;
-    const v = mode === 'story' ? VEHICLES.rig : vehicle;
-    world.configure(v, road.laneCount, road.mix, mode === 'story' ? STORY_TEST_RULES : undefined);
-    world.reset(newSeed());
-    renderer.setVehicle?.(v.id);
-    renderer.setMap?.(road);
-    renderer.resetRun();
-    buildDents();
+    const story = mode !== 'free';
+    // The road behind the on-foot view stays the Story road, so the menu looks right after.
+    if (wasFree !== !story) {
+      road = story ? STORY_ROAD : map;
+      const v = story ? VEHICLES.rig : vehicle;
+      world.configure(v, road.laneCount, road.mix, story ? STORY_TEST_RULES : undefined);
+      world.reset(newSeed());
+      renderer.setVehicle?.(v.id);
+      renderer.setMap?.(road);
+      renderer.resetRun();
+      buildDents();
+    }
     ui.hudFuel.hidden = mode !== 'story';
-    ui.hudCoinDot.className = `chip-dot ${mode === 'story' ? 'chip-scrap' : 'chip-coin'}`;
+    ui.hudHp.hidden = mode !== 'foot';
+    ui.dents.hidden = mode === 'foot';
+    ui.hudLabel.textContent = mode === 'foot' ? 'Supplies' : 'Distance';
+    ui.hudCoinDot.className = `chip-dot ${story ? 'chip-scrap' : 'chip-coin'}`;
+    footIn.enabled = mode === 'foot';
+    footIn.reset();
+    shownMeters = shownScore = shownCoins = -1;
   };
   const renderMaps = (): void => {
     ui.mapList.textContent = '';
@@ -411,7 +460,20 @@ function boot(): void {
   ui.btnGfxHigh.addEventListener('click', () => setGfx('high'));
   ui.btnGfxLow.addEventListener('click', () => setGfx('low'));
   ui.btnStory.addEventListener('click', () => {
+    sfx.unlock();
+    show(ui.storyPick);
+  });
+  el('btnStoryBack').addEventListener('click', () => show(ui.menu));
+  el('btnStoryRoad').addEventListener('click', () => {
     setMode('story');
+    start();
+  });
+  el('btnStoryFoot').addEventListener('click', () => {
+    if (!foot3d) {
+      show(ui.menu);
+      return;
+    }
+    setMode('foot');
     start();
   });
   // Garage: browse the vehicles, buy with coins, pick one to drive.
@@ -541,9 +603,10 @@ function boot(): void {
 
   const onAction = (a: Action): void => {
     if (state === 'play') {
-      if (a === Action.Left) world.steer(-1);
+      if (a === Action.Pause) pause();
+      else if (mode === 'foot') return;
+      else if (a === Action.Left) world.steer(-1);
       else if (a === Action.Right) world.steer(1);
-      else if (a === Action.Pause) pause();
     } else if (state === 'countdown') {
       if (a === Action.Pause) pause();
     } else if (state === 'paused') {
@@ -554,10 +617,46 @@ function boot(): void {
         else if (a === Action.Right) step(1);
         else if (a === Action.Confirm) ui.btnVehAction.click();
         else if (a === Action.Pause) closeGarage();
+      } else if (!ui.storyPick.hidden) {
+        if (a === Action.Pause) show(ui.menu);
       } else if (a === Action.Confirm && ui.settings.hidden && ui.maps.hidden) openMaps();
     } else if (state === 'over' && overReady && a === Action.Confirm) {
       start();
     }
+  };
+
+  const updateFoot = (dt: number): void => {
+    const play = state === 'play';
+    foot.update(dt, play ? footIn.moveX : 0, play ? footIn.moveY : 0, play && footIn.takeAttack());
+    const ev = foot.events;
+    if (ev.swing) sfx.swish();
+    if (ev.hits > 0) {
+      sfx.whack();
+      foot3d?.addShake(4);
+      vibrate(15);
+    }
+    if (ev.kills > 0) foot3d?.popText(`+${ev.kills * 5}`, ev.hitX, ev.hitY, '#c9e08a');
+    if (ev.hurt) {
+      sfx.thud();
+      foot3d?.hurt();
+      replay(ui.flash, 'is-on');
+      vibrate(40);
+    }
+    if (ev.loot) {
+      const name = { scrap: `+${ev.lootAmount} scrap`, fuel: 'Fuel can!', med: 'Medkit +35', inhaler: "Lara's inhaler!" }[ev.loot];
+      if (ev.loot === 'scrap') sfx.coin(2);
+      else sfx.fuel();
+      foot3d?.popText(name, ev.lootX, ev.lootY, ev.loot === 'scrap' ? '#d4d8dc' : '#ffc21a');
+      if (ev.loot !== 'scrap' && ev.loot !== 'med' && foot.exitOpen) {
+        ui.banner.textContent = 'Got it! Back to the door';
+        ui.banner.hidden = false;
+        replay(ui.banner, 'is-on');
+        window.clearTimeout(bannerTimer);
+        bannerTimer = window.setTimeout(() => (ui.banner.hidden = true), 1900);
+      }
+    }
+    if (ev.done && state === 'play') gameOver();
+    foot.clearEvents();
   };
 
   const laneCenterX = (): number => (world.lanePos + 0.5) * world.roadWidth / world.laneCount;
@@ -579,6 +678,8 @@ function boot(): void {
         }, 450);
       }
       world.attract(dt, 0);
+    } else if (mode === 'foot' && (state === 'play' || state === 'over')) {
+      updateFoot(dt);
     } else if (state === 'play' || state === 'over') {
       const slowmo = !world.alive && world.crashT < SLOWMO_TIME;
       world.update(slowmo ? dt * SLOWMO_SCALE : dt);
@@ -655,6 +756,23 @@ function boot(): void {
     music.setMuffled(state === 'paused');
     music.update();
     sfx.setEngine(running || state === 'countdown', Math.min(1, renderer.speedFx + (world.throttleMul - 1) * 0.8));
+    if (mode === 'foot' && foot3d && state !== 'menu') {
+      sfx.setEngine(false, 0);
+      foot3d.draw(alpha, state === 'paused' ? 0 : frameDt, foot.weapon);
+      ui.hudHpFill.style.transform = `scaleX(${(foot.hp / foot.maxHp).toFixed(3)})`;
+      ui.hudHp.classList.toggle('is-low', foot.hp < 30);
+      const sup = foot.found * 1000 + foot.kills;
+      if (sup !== shownMeters) {
+        shownMeters = sup;
+        ui.dist.textContent = `${foot.found} / ${foot.level.goal}`;
+        ui.score.textContent = `Zombies ${foot.kills}`;
+      }
+      if (foot.scrap !== shownCoins) {
+        shownCoins = foot.scrap;
+        ui.hudCoins.textContent = fmt(shownCoins);
+      }
+      return;
+    }
     const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
     renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? (garageOpen ? 'garage' : 'menu') : 'game');
     const fx = Math.round(renderer.speedFx * 100) / 100;

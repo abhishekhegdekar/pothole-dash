@@ -306,6 +306,11 @@ export class Renderer3D implements GameRenderer {
     this.setQuality(quality);
   }
 
+  /** The shared WebGL renderer, for other views such as the on-foot sections. */
+  get webgl(): THREE.WebGLRenderer {
+    return this.gl;
+  }
+
   /** Builds the player's vehicle: the detailed auto, or a merged low-poly model with brake lights. */
   private buildVehicle(id: VehicleId): THREE.Group {
     let g: THREE.Group;
