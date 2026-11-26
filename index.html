@@ -12,11 +12,15 @@
 
       <div id="hud" class="hud is-hidden">
         <div class="hud-left">
-          <div class="hud-label">Distance</div>
+          <div id="hudLabel" class="hud-label">Distance</div>
           <div id="hudDist" class="hud-dist">0 m</div>
           <div class="hud-sub"><span id="hudScore">Score 0</span><span id="hudCombo" class="combo" hidden>Combo ×2</span></div>
         </div>
         <div class="hud-right">
+          <div id="hudHp" class="hud-fuel hud-hp" hidden aria-label="Health">
+            <span class="fuel-label">Health</span>
+            <span class="fuel-bar"><i id="hudHpFill"></i></span>
+          </div>
           <div id="hudFuel" class="hud-fuel" hidden aria-label="Fuel">
             <span class="fuel-label">Fuel</span>
             <span class="fuel-bar"><i id="hudFuelFill"></i></span>
@@ -27,6 +31,15 @@
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
           </button>
         </div>
+      </div>
+
+      <div id="footPad" class="foot-pad" hidden>
+        <div id="stickBase" class="stick-base" aria-hidden="true"><div id="stickKnob" class="stick-knob"></div></div>
+        <p class="foot-hint">Drag here to walk</p>
+        <button id="btnAttack" class="attack-btn" type="button" aria-label="Swing">
+          <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M5 19l9-9M14 10l2-6 4 4-6 2M4 20l2-2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span>Swing</span>
+        </button>
       </div>
 
       <div id="pedals" class="pedals is-hidden">
@@ -149,6 +162,30 @@
         </div>
       </section>
 
+      <section id="storyPick" class="overlay maps" hidden>
+        <div class="maps-panel">
+          <div class="maps-head">
+            <button id="btnStoryBack" class="icon-btn" type="button" aria-label="Back">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <h2>Story Mode test</h2>
+          </div>
+          <p class="lede story-lede">The full story arrives chapter by chapter. Try the two halves of it now.</p>
+          <div class="map-list" role="list">
+            <button id="btnStoryRoad" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #24121a, #6a2a3a)">
+              <span class="mc-cond">Driving · Night</span><span class="mc-name">The road out</span>
+              <span class="mc-tag">Ram zombies, watch the fuel, let the roof gun work.</span>
+              <span class="mc-foot"><span>Raj's SUV</span><span class="mc-go">Drive</span></span>
+            </button>
+            <button id="btnStoryFoot" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #0f1116, #2e4a5a)">
+              <span class="mc-cond">On foot · Supermarket</span><span class="mc-name">Supply run</span>
+              <span class="mc-tag">Find Lara's inhaler and fuel, then get back to the door.</span>
+              <span class="mc-foot"><span>Bat or machete</span><span class="mc-go">Go in</span></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section id="paused" class="overlay" hidden>
         <div class="card card-small">
           <h2>Paused</h2>
@@ -162,14 +199,14 @@
         <div class="card card-small">
           <h2 id="overTitle">Auto broke down!</h2>
           <div class="final">
-            <span class="final-label">You drove</span>
+            <span id="overFinalLabel" class="final-label">You drove</span>
             <span id="overDist" class="final-dist">0 m</span>
             <span id="overBadge" class="badge" hidden>Personal best</span>
           </div>
           <dl class="stats">
-            <div><dt>Score</dt><dd id="overScore">0</dd></div>
-            <div><dt>Near misses</dt><dd id="overNear">0</dd></div>
-            <div><dt>Best combo</dt><dd id="overCombo">0</dd></div>
+            <div><dt id="overL1">Score</dt><dd id="overScore">0</dd></div>
+            <div><dt id="overL2">Near misses</dt><dd id="overNear">0</dd></div>
+            <div><dt id="overL3">Best combo</dt><dd id="overCombo">0</dd></div>
           </dl>
           <p id="overEarned" class="earned"></p>
           <p id="overBest" class="best"></p>

@@ -389,6 +389,51 @@ function wreck(b: GeoBuilder, v: number): void {
   if (v === 2) b.box(0.4, 0.3, 0.4, -1.2, 0.15, 1.6, '#5a5048');
 }
 
+/** One zombie on its own (on-foot sections), facing +z. */
+export function zombieGeo(v: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  zombie(b, 0, 0, v);
+  return b.build();
+}
+
+/** Raj on foot, facing +z: blue checked shirt, jeans, a satchel. The weapon is separate. */
+export function rajGeo(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const skin = '#b57d58';
+  for (const s of [-1, 1]) {
+    b.box(0.19, 0.82, 0.22, s * 0.12, 0.41, 0, '#2c3a5a');
+    b.box(0.2, 0.1, 0.32, s * 0.12, 0.05, 0.04, '#3a2a1e');
+  }
+  b.box(0.52, 0.66, 0.32, 0, 1.13, 0, '#2f5f9a');
+  for (let i = -1; i <= 1; i++) b.box(0.53, 0.04, 0.33, 0, 1.0 + i * 0.18, 0, '#24497a');
+  b.box(0.04, 0.66, 0.33, 0.1, 1.13, 0, '#24497a');
+  b.box(0.12, 0.6, 0.06, -0.12, 1.15, -0.18, '#6b4a2f', 0, 0, 0.6);
+  b.box(0.3, 0.26, 0.12, 0.22, 0.9, -0.2, '#6b4a2f');
+  b.box(0.26, 0.29, 0.27, 0, 1.6, 0, skin);
+  b.box(0.28, 0.1, 0.29, 0, 1.77, -0.01, '#1e1712');
+  b.box(0.2, 0.06, 0.02, 0, 1.53, 0.14, '#2a1e16');
+  // Left arm hangs; the right arm is part of the weapon so it swings with it.
+  b.box(0.13, 0.6, 0.15, -0.33, 1.12, 0, '#2f5f9a');
+  b.box(0.11, 0.12, 0.12, -0.33, 0.78, 0, skin);
+  return b.build();
+}
+
+/** Right arm and weapon, built around the shoulder (pivot at the origin), pointing forward. */
+export function weaponGeo(id: 'bat' | 'machete'): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.box(0.13, 0.13, 0.5, 0, 0, 0.22, '#2f5f9a');
+  b.box(0.12, 0.12, 0.12, 0, 0, 0.5, '#b57d58');
+  if (id === 'bat') {
+    b.add(new THREE.CylinderGeometry(0.06, 0.035, 0.95, 8), '#c79a5a', 0, 0.02, 0.98, Math.PI / 2, 0, 0);
+    b.box(0.06, 0.06, 0.1, 0, 0, 0.52, '#2a2a2e');
+  } else {
+    b.box(0.05, 0.05, 0.2, 0, 0, 0.6, '#2a2a2e');
+    b.box(0.03, 0.12, 0.7, 0, 0.02, 1.02, '#c4c8cc');
+    b.box(0.03, 0.04, 0.7, 0, 0.09, 1.02, '#e8ecf0');
+  }
+  return b.build();
+}
+
 /** A red jerrycan: the fuel pickup in Story Mode. */
 export function fuelCanGeo(): THREE.BufferGeometry {
   const b = new GeoBuilder();
