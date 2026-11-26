@@ -245,8 +245,33 @@ const LONDON: Theme = {
   levels: (i) => ({ drone: 0, pad: 0.55, bass: 0.9, drums: 0.8 + 0.2 * i, hats: 0.5 + 0.4 * i, perc: ramp(i, 0.3, 0.7), lead: 0.8, lead2: ramp(i, 0.55, 0.9) }),
 };
 
-export type RunTheme = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london';
-const RUN_THEMES: Record<RunTheme, Theme> = { mumbai: RUN, thane: THANE, bangalore: BANGALORE, newyork: NEWYORK, london: LONDON };
+/** Story Mode: dark and driving in D minor, a low pulse, toms and a shehnai crying over it. */
+const ZOMBIE: Theme = {
+  bpm: 112,
+  bars: 8,
+  chords: [[50, 53, 57], [50, 53, 57], [46, 50, 53], [48, 52, 55], [50, 53, 57], [50, 53, 57], [46, 50, 53], [45, 49, 52]],
+  bassRoots: ['D2', 'D2', 'A#1', 'C2', 'D2', 'D2', 'A#1', 'A1'].map(midiOf),
+  bassPattern: 'R R . R R . R . R R . R R . O .',
+  lead: parseBars([
+    'D5 - - - . . . . F5 - E5 - D5 - . .',
+    'C#5 - - - - - - - . . . . A4 - . .',
+    'A#4 - - - D5 - - - F5 - - - E5 - D5 -',
+    'E5 - - - - - - - . . . . . . . .',
+    'A5 - - - G5 - F5 - E5 - - - D5 - . .',
+    'F5 - E5 - D5 - C#5 - D5 - - - . . . .',
+    'D5 - - - F5 - - - A#5 - - - A5 - G5 -',
+    'A5 - - - - - - - G5 - - - E5 - C#5 -',
+  ]),
+  leadVoice: 'shehnai',
+  drums: 'K . . K S . . . K . K . S . . K',
+  hats: 'x . x x x . x . x . x x x . x .',
+  perc: 'D . . T . . D . . . T . D . T T',
+  drone: ['D3', 'A2', 'D3', 'A2'].map(midiOf),
+  levels: (i) => ({ drone: 0.6, pad: 0.45, bass: 0.95, drums: 0.8 + 0.2 * i, hats: ramp(i, 0.3, 0.7), perc: 0.6 + 0.3 * i, lead: ramp(i, 0.2, 0.75), lead2: ramp(i, 0.6, 0.9) }),
+};
+
+export type RunTheme = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london' | 'zombie';
+const RUN_THEMES: Record<RunTheme, Theme> = { mumbai: RUN, thane: THANE, bangalore: BANGALORE, newyork: NEWYORK, london: LONDON, zombie: ZOMBIE };
 
 const LOOKAHEAD = 0.25;
 
@@ -457,6 +482,8 @@ export class Music {
     const p = th.perc.split(' ')[s];
     if (p === 's') this.hat(L('perc'), tt, 0.035, 0.22);
     else if (p === 'c') this.clap(L('perc'), tt);
+    else if (p === 'D') this.dha(L('perc'), tt);
+    else if (p === 'T') this.ta(L('perc'), tt, 0.7 + Math.random() * 0.2);
     // A dhol roll into the next phrase at the end of every 4 bars.
     if ((th === RUN || th === THANE) && bar % 4 === 3 && s >= 12) this.ta(L('perc'), tt, 0.8);
 

@@ -134,6 +134,30 @@ export class Sfx {
     });
   }
 
+  /** Roof gun: a sharp crack with a low thump. */
+  shot(): void {
+    this.play((c, t, out) => {
+      this.noiseBurst(c, t, out, 0.12, 2600, 0.55);
+      this.tone(c, t, out, 'square', 180, 60, 0.08, 0.3);
+    });
+  }
+
+  /** Zombie hits the ram bar: a dull whack. */
+  whack(): void {
+    this.play((c, t, out) => {
+      this.noiseBurst(c, t, out, 0.14, 600, 0.6);
+      this.tone(c, t, out, 'sine', 120, 70, 0.12, 0.5);
+    });
+  }
+
+  /** Fuel can: a slosh and a rising chime. */
+  fuel(): void {
+    this.play((c, t, out) => {
+      this.noiseBurst(c, t, out, 0.25, 900, 0.25);
+      this.tone(c, t + 0.05, out, 'triangle', 660, 990, 0.25, 0.16);
+    });
+  }
+
   /** Speed breaker: a dull double knock. */
   bump(): void {
     this.play((c, t, out) => {

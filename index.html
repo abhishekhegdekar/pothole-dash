@@ -17,7 +17,11 @@
           <div class="hud-sub"><span id="hudScore">Score 0</span><span id="hudCombo" class="combo" hidden>Combo ×2</span></div>
         </div>
         <div class="hud-right">
-          <div class="hud-coins"><span class="chip-dot chip-coin" aria-hidden="true"></span><span id="hudCoins">0</span></div>
+          <div id="hudFuel" class="hud-fuel" hidden aria-label="Fuel">
+            <span class="fuel-label">Fuel</span>
+            <span class="fuel-bar"><i id="hudFuelFill"></i></span>
+          </div>
+          <div class="hud-coins"><span id="hudCoinDot" class="chip-dot chip-coin" aria-hidden="true"></span><span id="hudCoins">0</span></div>
           <div id="hudDents" class="dents" role="img" aria-label="3 of 3 dents left"></div>
           <button id="btnPause" class="icon-btn" type="button" aria-label="Pause">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
@@ -56,9 +60,9 @@
               <span class="mi-name">Free Run</span>
               <span class="mi-sub">Endless drive. Earn coins and points.</span>
             </button>
-            <button id="btnStory" class="menu-item" type="button" aria-disabled="true">
-              <span class="mi-name">Story Mode <span class="soon">Coming soon</span></span>
-              <span class="mi-sub">500 km. Raj, Tanvi and Lara.</span>
+            <button id="btnStory" class="menu-item" type="button">
+              <span class="mi-name">Story Mode <span class="soon">Test drive</span></span>
+              <span class="mi-sub">The night of the siren. Get out of Mumbai.</span>
             </button>
             <button id="btnGarage" class="menu-item" type="button">
               <span class="mi-name">Garage</span>

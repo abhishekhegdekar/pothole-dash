@@ -27,6 +27,12 @@ export const ObstacleKind = {
   /** Cones and a barrier around a dug-up patch (London). */
   Roadworks: 18,
   BlackCab: 19,
+  /** Story Mode: a shambling zombie. Ramming one knocks it down and wears the bumper. */
+  Zombie: 20,
+  /** Three zombies across a lane line: wears the bumper much faster. */
+  Horde: 21,
+  /** Burnt-out abandoned car. */
+  Wreck: 22,
 } as const;
 export type ObstacleKind = (typeof ObstacleKind)[keyof typeof ObstacleKind];
 
@@ -36,8 +42,8 @@ export interface ObstacleDef {
   h: number;
   /** Number of drawn variants (shapes or colours). */
   variants: number;
-  /** 'dent' costs a dent; 'slow' only slows you. */
-  effect: 'dent' | 'slow';
+  /** 'dent' costs a dent; 'slow' only slows you; 'ram' knocks it over and wears the bumper (zombies). */
+  effect: 'dent' | 'slow' | 'ram';
   /**
    * Movement as a fraction of the player's current speed. Positive moves the same way as the
    * player (slower traffic), negative comes toward the player, 0 stays put.
@@ -69,7 +75,13 @@ export const OBSTACLES: Record<ObstacleKind, ObstacleDef> = {
   [ObstacleKind.DoubleDecker]: { w: 2.5, h: 10, variants: 1, effect: 'dent', motion: 0.42, place: 'lane' },
   [ObstacleKind.Roadworks]: { w: 2.4, h: 2.2, variants: 2, effect: 'dent', motion: 0, place: 'lane' },
   [ObstacleKind.BlackCab]: { w: 1.8, h: 4.4, variants: 1, effect: 'dent', motion: 0.5, place: 'lane' },
+  [ObstacleKind.Zombie]: { w: 0.9, h: 0.8, variants: 6, effect: 'ram', motion: 0, place: 'lane' },
+  [ObstacleKind.Horde]: { w: 3.4, h: 1.6, variants: 3, effect: 'ram', motion: 0, place: 'span' },
+  [ObstacleKind.Wreck]: { w: 1.9, h: 4.2, variants: 3, effect: 'dent', motion: 0, place: 'lane' },
 };
+
+/** Kinds the roof gun can shoot. */
+export const ZOMBIE_KINDS: ReadonlySet<ObstacleKind> = new Set([ObstacleKind.Zombie, ObstacleKind.Horde]);
 
 /** Potholes and puddles: the hazards that tougher vehicles can shrug off. */
 export const POTHOLE_KINDS: ReadonlySet<ObstacleKind> = new Set([ObstacleKind.SmallPothole, ObstacleKind.LargePothole, ObstacleKind.Puddle]);

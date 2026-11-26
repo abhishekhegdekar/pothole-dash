@@ -210,7 +210,15 @@ h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 28px; 
 
 /* HUD coins */
 .hud-coins { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(21, 22, 26, 0.55); font-weight: 800; font-variant-numeric: tabular-nums; font-size: 15px; }
+.hud-dist { white-space: nowrap; }
 .hud-coins.pop { animation: coinpop 0.25s ease-out; }
+.chip-scrap { background: #9aa2aa; box-shadow: 0 0 0 2px rgba(154, 162, 170, 0.3); border-radius: 2px; transform: rotate(45deg); }
+.hud-fuel { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: rgba(21, 22, 26, 0.55); font-weight: 800; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+.fuel-bar { width: 72px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.fuel-bar i { display: block; height: 100%; width: 100%; border-radius: 4px; background: #ffc21a; transform-origin: left; }
+.hud-fuel.is-low .fuel-bar i { background: var(--signal); animation: fuelblink 0.6s steps(2) infinite; }
+@keyframes fuelblink { 50% { opacity: 0.35; } }
+@media (max-width: 420px) { .fuel-label { display: none; } .fuel-bar { width: 44px; } .hud-right { gap: 8px; } }
 @keyframes coinpop { 0% { transform: scale(1.25); } 100% { transform: scale(1); } }
 
 /* Map select */

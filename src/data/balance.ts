@@ -55,6 +55,21 @@ export const BALANCE = {
   /** Extra points per metre while accelerating. */
   boostPoints: 0.5,
 
+  /** Story Mode: a full tank lasts this many metres. */
+  fuelRange: 1100,
+  /** Fuel a can puts back, as a share of the tank. */
+  fuelCan: 0.4,
+  /** Chance that a safe gap gets a fuel can instead of a scrap trail. */
+  fuelCanRate: 0.04,
+  /** Zombies the bumper can take before it costs a dent, by ram bar level 0..3. Hordes count as 3. */
+  ramHits: [3, 5, 8, 12],
+  /** Seconds between roof gun shots, by gun level 1..3 (0 = no gun). */
+  gunCooldown: [0, 2.4, 1.7, 1.1],
+  /** How far ahead the roof gun reaches (metres). */
+  gunRange: 30,
+  /** Points for each zombie knocked down. */
+  zombiePoints: 5,
+
   /** Particles, rows etc. are kept in fixed pools of this size. */
   obstaclePool: 48,
 } as const;

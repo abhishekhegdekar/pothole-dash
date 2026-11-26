@@ -8,7 +8,7 @@ import { MAPS, type MapDef } from '../data/maps';
 import { ObstacleKind } from '../data/obstacles';
 import { buildBlock, CHUNK_M, poolTexture, roadTexture, type BlockGeometry } from './city';
 import { buildAuto, type PotholeShape } from './models';
-import { buildObstacleGeos, playerVehicleGeo } from './props';
+import { buildObstacleGeos, fuelCanGeo, playerVehicleGeo } from './props';
 import { VEHICLES, type VehicleId } from '../data/vehicles';
 import { createSignAtlas, type SignAtlas } from './signs';
 import { Ambient } from './ambient';
@@ -74,6 +74,12 @@ export class Renderer3D implements GameRenderer {
   private readonly propMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   private obstacleGeos: THREE.BufferGeometry[][] = [];
   private readonly coinMeshes: THREE.Mesh[] = [];
+  private readonly canMeshes: THREE.Mesh[] = [];
+  private readonly coinMat = new THREE.MeshLambertMaterial({ color: '#ffc21a', emissive: '#7a5200', emissiveIntensity: 0.8 });
+  private readonly coinRimMat = new THREE.MeshLambertMaterial({ color: '#e09a00', emissive: '#5a3a00' });
+  private readonly tracer: THREE.Line;
+  private readonly flash: THREE.PointLight;
+  private tracerT = 0;
   private readonly rain: THREE.LineSegments;
   private readonly rainPos: Float32Array;
   private rainCount = 0;
@@ -218,9 +224,10 @@ export class Renderer3D implements GameRenderer {
     // Coins: gold discs standing on edge.
     const coinGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.09, 18);
     coinGeo.rotateX(Math.PI / 2);
-    const coinMat = new THREE.MeshLambertMaterial({ color: '#ffc21a', emissive: '#7a5200', emissiveIntensity: 0.8 });
+    const coinMat = this.coinMat;
     const rimGeo = new THREE.TorusGeometry(0.4, 0.05, 6, 18);
-    const rimCoinMat = new THREE.MeshLambertMaterial({ color: '#e09a00', emissive: '#5a3a00' });
+    const rimCoinMat = this.coinRimMat;
+    const canGeo = fuelCanGeo();
     for (let i = 0; i < world.coins.length; i++) {
       const m = new THREE.Mesh(coinGeo, coinMat);
       m.add(new THREE.Mesh(rimGeo, rimCoinMat));
@@ -228,7 +235,20 @@ export class Renderer3D implements GameRenderer {
       m.visible = false;
       this.scene.add(m);
       this.coinMeshes.push(m);
+      const can = new THREE.Mesh(canGeo, this.propMat);
+      can.castShadow = true;
+      can.visible = false;
+      this.scene.add(can);
+      this.canMeshes.push(can);
     }
+
+    // Roof gun tracer and muzzle flash.
+    this.tracer = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: '#ffe9a0', transparent: true }));
+    this.tracer.frustumCulled = false;
+    this.tracer.visible = false;
+    this.scene.add(this.tracer);
+    this.flash = new THREE.PointLight('#ffcf70', 0, 9, 1.6);
+    this.scene.add(this.flash);
 
     // Rain: short streaks that fall around the camera's target.
     this.rainPos = new Float32Array(RAIN_MAX * 6);
@@ -367,6 +387,13 @@ export class Renderer3D implements GameRenderer {
       c.k = -999;
     }
 
+    // Story Mode picks up scrap, not coins: dull steel instead of gold.
+    const story = this.world.rules.fuel;
+    this.coinMat.color.set(story ? '#9aa2aa' : '#ffc21a');
+    this.coinMat.emissive.set(story ? '#20262c' : '#7a5200');
+    this.coinRimMat.color.set(story ? '#6a7078' : '#e09a00');
+    this.coinRimMat.emissive.set(story ? '#101214' : '#5a3a00');
+
     // Light and mood.
     const L = map.light;
     const sky = new THREE.Color(L.sky);
@@ -447,8 +474,15 @@ export class Renderer3D implements GameRenderer {
     const coins = this.world.coins;
     for (let i = 0; i < coins.length; i++) {
       const c = coins[i]!;
+      const can = this.canMeshes[i]!;
+      const show = c.active && c.y < cam + VIEW_AHEAD + 10;
+      can.visible = show && c.fuel;
+      if (can.visible) {
+        can.position.set(c.x - this.roadW / 2, 0.75 + Math.sin(this.time * 3 + c.y) * 0.12, -c.y);
+        can.rotation.y = this.time * 1.6;
+      }
       const m = this.coinMeshes[i]!;
-      m.visible = c.active && c.y < cam + VIEW_AHEAD + 10;
+      m.visible = show && !c.fuel;
       if (!m.visible) continue;
       m.position.set(c.x - this.roadW / 2, 0.75 + Math.sin(this.time * 4 + c.y) * 0.1, -c.y);
       m.rotation.y = this.time * 3 + c.y * 0.4;
@@ -496,6 +530,21 @@ export class Renderer3D implements GameRenderer {
       const a = Math.random() * Math.PI * 2;
       const s = 1.5 + Math.random() * 4;
       this.spawn(x, y, 0.3, Math.cos(a) * s, Math.sin(a) * s + this.world.speed * 0.5, 2 + Math.random() * 3, 0.5 + Math.random() * 0.4, 0.25 + Math.random() * 0.3, i % 3 === 0 ? DEBRIS : DUST);
+    }
+  }
+
+  /** Roof gun: a tracer from the turret to the target and a flash. */
+  shot(x: number, y: number): void {
+    const from = this.tmp.set(this.auto.position.x + 0.35, 2.3, this.auto.position.z - 1.1);
+    const pos = this.tracer.geometry.attributes.position as THREE.BufferAttribute;
+    pos.setXYZ(0, from.x, from.y, from.z);
+    pos.setXYZ(1, x - this.roadW / 2, 1.3, -y);
+    pos.needsUpdate = true;
+    this.tracerT = 0.09;
+    this.flash.position.copy(from);
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.spawn(x, y, 1.2, Math.cos(a) * 2, Math.sin(a) * 2 + this.world.speed * 0.3, 1 + Math.random() * 2, 0.35, 0.18, DUST);
     }
   }
 
@@ -581,6 +630,10 @@ export class Renderer3D implements GameRenderer {
       }
     }
     this.updateParticles(frameDt);
+    this.tracerT = Math.max(0, this.tracerT - frameDt);
+    this.tracer.visible = this.tracerT > 0;
+    (this.tracer.material as THREE.LineBasicMaterial).opacity = this.tracerT / 0.09;
+    this.flash.intensity = this.tracerT > 0 ? 40 * (this.tracerT / 0.09) : 0;
 
     if (this.headlight.intensity > 0) {
       const yaw = this.auto.rotation.y;
@@ -636,9 +689,29 @@ export class Renderer3D implements GameRenderer {
       m.group.position.set(o.x - this.roadW / 2, 0, -o.y);
       // Cows stand at an angle; bikes wobble a little.
       let ry = 0;
+      let rx = 0;
+      let rz = 0;
       if (o.kind === ObstacleKind.Cow) ry = ((o.variant * 7 + Math.floor(o.y)) % 5) * 0.35 - 0.7;
       else if (o.kind === ObstacleKind.Biker || o.kind === ObstacleKind.DeliveryBike) ry = Math.sin(this.time * 3 + o.y) * 0.05;
-      m.group.rotation.y = ry;
+      else if (o.kind === ObstacleKind.Zombie || o.kind === ObstacleKind.Horde) {
+        if (o.down > 0) {
+          // Knocked down: topple away, then sink into the road and fade out. No blood.
+          const k = Math.min(1, o.down / 0.35);
+          rx = -k * 1.45;
+          rz = o.fall * k * 0.5;
+          m.group.position.x += o.fall * k * 0.6;
+          m.group.position.y = -Math.max(0, o.down - 0.7) * 0.9;
+          m.group.position.z -= k * 0.8;
+          if (o.down > 2.2) m.group.visible = false;
+        } else {
+          // Staggering shuffle.
+          const ph = this.time * 2.2 + o.y;
+          rz = Math.sin(ph) * 0.09;
+          ry = Math.sin(ph * 0.5) * 0.2;
+          m.group.position.x += Math.sin(ph * 0.5) * 0.12;
+        }
+      }
+      m.group.rotation.set(rx, ry, rz);
     }
   }
 
