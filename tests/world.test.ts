@@ -50,9 +50,10 @@ describe('World', () => {
     }
   });
 
-  for (const id of MAP_ORDER) {
-    it(`a look-ahead bot gets through ${MAPS[id].name} without crashing`, () => {
-      const V = VEHICLES.auto;
+  for (const [id, vid] of MAP_ORDER.flatMap((m) => (['auto', 'suv', 'scooter'] as const).map((v) => [m, v] as const))) {
+    it(`a look-ahead bot gets through ${MAPS[id].name} in the ${vid} with at most 2 knocks`, () => {
+      // Lots of dents so the run goes the full distance; we count the knocks instead.
+      const V = { ...VEHICLES[vid], dents: 99 };
       const phw = (V.width * B.hitboxScale) / 2;
       const phh = (V.length * B.hitboxScale) / 2;
       let coins = 0;
@@ -98,7 +99,7 @@ describe('World', () => {
           w.update(STEP);
           w.clearEvents();
         }
-        expect(w.alive, `${id} seed ${seed} crashed at ${Math.floor(w.dist)} m`).toBe(true);
+        expect(99 - w.dents, `${id} seed ${seed} knocks by ${Math.floor(w.dist)} m`).toBeLessThanOrEqual(2);
         coins += w.coinCount;
       }
       expect(coins).toBeGreaterThan(20);

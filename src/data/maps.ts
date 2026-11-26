@@ -30,6 +30,20 @@ export interface CityStyle {
   hills: boolean;
   /** Parked black-and-yellow taxis on the roadside (Mumbai). */
   taxis: boolean;
+  /** Which shop names to paint on signs. */
+  signs: 'india' | 'ny' | 'london';
+  /** Share of very tall glass and brick towers (New York). */
+  skyscrapers: number;
+  /** Share of brick terraced houses with chimneys (London). */
+  terraces: number;
+  /** Neon strips on shop fronts. */
+  neon: boolean;
+  /** Some blocks are a bridge over a river. */
+  river: boolean;
+  /** Paint the left lane as a red bus lane (London). */
+  busLane: boolean;
+  /** Fire hydrants, newspaper boxes, phone boxes: 'ny' or 'london' street furniture. */
+  furniture: 'india' | 'ny' | 'london';
 }
 
 export interface Lighting {
@@ -45,9 +59,9 @@ export interface Lighting {
   night: boolean;
 }
 
-export type Weather = 'clear' | 'rain' | 'drizzle';
+export type Weather = 'clear' | 'rain' | 'drizzle' | 'snow';
 
-export type MusicTheme = 'mumbai' | 'thane' | 'bangalore';
+export type MusicTheme = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london';
 
 export interface MapDef {
   id: MapId;
@@ -62,12 +76,14 @@ export interface MapDef {
   style: CityStyle;
   light: Lighting;
   weather: Weather;
+  /** Fog distance factor: 1 normal, lower is thicker. */
+  fog: number;
   music: MusicTheme;
   /** Card colours for the map select screen. */
   card: [string, string];
 }
 
-export type MapId = 'mumbai' | 'thane' | 'bangalore';
+export type MapId = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london';
 
 const BASE_STYLE: CityStyle = {
   walls: ['#e7b7a3', '#9fd3c7', '#f1cf7a', '#c9b9e3', '#b7d48f', '#efe3c8', '#e8946a', '#a6c4e6', '#f3f0ea'],
@@ -91,9 +107,16 @@ const BASE_STYLE: CityStyle = {
   flyover: false,
   hills: false,
   taxis: false,
+  signs: 'india',
+  skyscrapers: 0,
+  terraces: 0,
+  neon: false,
+  river: false,
+  busLane: false,
+  furniture: 'india',
 };
 
-export const MAPS: Record<MapId, MapDef> = {
+export const MAPS = {
   mumbai: {
     id: 'mumbai',
     name: 'Mumbai',
@@ -127,6 +150,7 @@ export const MAPS: Record<MapId, MapDef> = {
       night: true,
     },
     weather: 'rain',
+    fog: 1,
     music: 'mumbai',
     card: ['#1b2236', '#3c4f86'],
   },
@@ -166,6 +190,7 @@ export const MAPS: Record<MapId, MapDef> = {
       night: false,
     },
     weather: 'clear',
+    fog: 1,
     music: 'thane',
     card: ['#c86b3c', '#f0b58a'],
   },
@@ -207,12 +232,116 @@ export const MAPS: Record<MapId, MapDef> = {
       night: false,
     },
     weather: 'drizzle',
+    fog: 0.9,
     music: 'bangalore',
     card: ['#4b3f6e', '#8f7fb8'],
   },
+} as Record<MapId, MapDef>;
+
+MAPS.newyork = {
+  id: 'newyork',
+  name: 'New York',
+  tagline: 'Snow, neon and yellow cabs. Mind the steam.',
+  conditions: 'Neon night · Snow',
+  price: 6000,
+  laneCount: 4,
+  mix: {
+    puddleRate: 0,
+    specialRate: 0.38,
+    specials: {
+      [ObstacleKind.YellowCab]: 4,
+      [ObstacleKind.SteamVent]: 3,
+      [ObstacleKind.DeliveryTruck]: 2,
+      [ObstacleKind.Jaywalker]: 2,
+    },
+  },
+  style: {
+    ...BASE_STYLE,
+    walls: ['#8a4b3a', '#a65f45', '#6f6a66', '#b8a48c', '#5c4a42', '#9c8676'],
+    windowLit: '#ffe0a0',
+    litRate: 0.5,
+    awnings: ['#1f4f3a', '#7a1f2b', '#202a44', '#3a3a3e'],
+    footpath: '#9ea0a4',
+    ground: '#7d7f84',
+    curbA: '#b9bbbf',
+    curbB: '#a4a6aa',
+    leaf: ['#5a7a4a', '#4a6a3e'],
+    minFloors: 4,
+    maxFloors: 8,
+    skyscrapers: 0.4,
+    neon: true,
+    signs: 'ny',
+    furniture: 'ny',
+  },
+  light: {
+    sky: '#151a33',
+    hemiSky: '#9aa8e0',
+    hemiGround: '#3a3440',
+    hemi: 1.25,
+    sun: '#b8c4ff',
+    sunIntensity: 0.9,
+    exposure: 1.15,
+    night: true,
+  },
+  weather: 'snow',
+  fog: 0.85,
+  music: 'newyork',
+  card: ['#151a33', '#b03a7a'],
 };
 
-export const MAP_ORDER: MapId[] = ['mumbai', 'thane', 'bangalore'];
+MAPS.london = {
+  id: 'london',
+  name: 'London',
+  tagline: 'Fog, drizzle, double-deckers and cyclists.',
+  conditions: 'Grey morning · Fog and drizzle',
+  price: 9000,
+  laneCount: 3,
+  mix: {
+    puddleRate: 0.25,
+    specialRate: 0.36,
+    specials: {
+      [ObstacleKind.DoubleDecker]: 3,
+      [ObstacleKind.BlackCab]: 3,
+      [ObstacleKind.Cyclist]: 3,
+      [ObstacleKind.Roadworks]: 3,
+    },
+  },
+  style: {
+    ...BASE_STYLE,
+    walls: ['#9a5a44', '#b06a4e', '#e9e2d2', '#d8cfbd', '#8c4f3e', '#f0ebe0'],
+    window: '#334050',
+    litRate: 0.2,
+    awnings: ['#1f3d2e', '#2a2a6e', '#7a1f2b', '#2d2d33'],
+    footpath: '#a7a7a2',
+    ground: '#7f8a6a',
+    curbA: '#c9c9c4',
+    curbB: '#b4b4ae',
+    leaf: ['#4f7a3e', '#3f6b34'],
+    minFloors: 3,
+    maxFloors: 4,
+    terraces: 0.6,
+    river: true,
+    busLane: true,
+    signs: 'london',
+    furniture: 'london',
+  },
+  light: {
+    sky: '#b9bec4',
+    hemiSky: '#e4e8ee',
+    hemiGround: '#5a5e58',
+    hemi: 1.7,
+    sun: '#f2efe6',
+    sunIntensity: 1.2,
+    exposure: 1.05,
+    night: false,
+  },
+  weather: 'drizzle',
+  fog: 0.55,
+  music: 'london',
+  card: ['#5b6470', '#c8281f'],
+};
+
+export const MAP_ORDER: MapId[] = ['mumbai', 'thane', 'bangalore', 'newyork', 'london'];
 
 export function isMapId(x: unknown): x is MapId {
   return typeof x === 'string' && x in MAPS;

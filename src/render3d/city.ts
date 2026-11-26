@@ -39,6 +39,9 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
   const lotX = half + CURB_W + WALK_W;
   // On lake maps, about half the blocks have water on the left instead of buildings.
   const lakeLeft = style.lake && rng.chance(0.55);
+  // On river maps, some blocks are a bridge: water on both sides, stone balustrades.
+  const bridge = style.river && rng.chance(0.25);
+  const india = style.furniture === 'india';
 
   const windowAt = (x: number, y: number, z: number, w: number, h: number, side: number): void => {
     if (rng.chance(style.litRate)) glow.box(0.08, h, w, x, y, z, style.windowLit);
@@ -54,7 +57,9 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
     // Footpath and the ground behind it.
     b.box(WALK_W, 0.16, CHUNK_M, side * (half + CURB_W + WALK_W / 2), 0.08, -CHUNK_M / 2, style.footpath);
 
-    if (side === -1 && lakeLeft) {
+    if (bridge) {
+      buildBridgeSide(b, glow, rng, lotX, side, pools);
+    } else if (side === -1 && lakeLeft) {
       buildLakeside(b, glow, rng, style, lotX, pools);
     } else {
       b.box(40, 0.02, CHUNK_M, side * (lotX + 20), 0.0, -CHUNK_M / 2, style.ground);
@@ -62,7 +67,21 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
       let z = 0;
       while (z < CHUNK_M - 2) {
         const roll = rng.next();
-        const kind = roll < style.towers ? 'tower' : roll < style.towers + style.chawls ? 'chawl' : 'house';
+        let acc = style.towers;
+        const kind =
+          roll < acc ? 'tower'
+          : roll < (acc += style.chawls) ? 'chawl'
+          : roll < (acc += style.skyscrapers) ? 'sky'
+          : roll < (acc += style.terraces) ? 'terrace'
+          : 'house';
+        if (kind === 'sky') {
+          z += buildSkyscraper(b, glow, rng, style, lotX, side, z, signCells.length ? sign : null);
+          continue;
+        }
+        if (kind === 'terrace') {
+          z += buildTerrace(b, glow, rng, style, lotX, side, z, sign, pools);
+          continue;
+        }
         const width = Math.min(CHUNK_M - z, kind === 'chawl' ? rng.range(9, 14) : kind === 'tower' ? rng.range(7, 10) : rng.range(4.5, 8));
         const depth = kind === 'tower' ? rng.range(10, 14) : rng.range(7, 11);
         const setback = kind === 'tower' ? rng.range(2, 5) : 0.6;
@@ -128,6 +147,12 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
               b.box(0.1, 2.2, width - 1.2, face - side * 0.03, 1.2, cz, rng.chance(0.5) ? '#8e9399' : '#5a4636');
             }
             b.box(1.4, 0.12, width - 0.8, face - side * 0.7, 2.9, cz, pick(style.awnings), 0, 0, side * 0.35);
+            if (style.neon) {
+              const neon = pick(['#ff4fb0', '#4fd6ff', '#b46bff', '#ff8a3d', '#6bff9a']);
+              glow.box(0.06, 0.08, width - 1.4, face - side * 0.08, 3.35, cz, neon);
+              if (rng.chance(0.5)) glow.box(0.5, 1.6, 0.08, face - side * 0.5, 4.6, cz + (width / 2 - 0.8), neon);
+              pools.push(face - side * 1.4, cz, 2.2, 0);
+            }
             if (rng.chance(0.85)) {
               const sw = Math.min(width - 1.2, 5.5);
               const sh = Math.min(1.15, sw / 4);
@@ -187,7 +212,9 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
         pz += 6;
         continue;
       }
-      if (r < 0.55) {
+      if (!india && r < 0.45) {
+        streetFurniture(b, glow, rng, style.furniture, px, -pz, side);
+      } else if (india && r < 0.55) {
         const col = pick(['#c0392b', '#2c6fb0', '#e8e4d8', '#222428', '#d98e04']);
         b.box(0.45, 0.55, 1.5, px, 0.45, -pz, col, 0, side * 0.3, 0);
         b.box(0.5, 0.08, 0.1, px, 0.95, -pz + 0.55, '#2a2a2e', 0, side * 0.3, 0);
@@ -206,7 +233,7 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
     }
 
     // Electric pole with sagging wires that run on to the next block; birds sit on some.
-    if (side === (style.flyover ? -1 : 1)) {
+    if (india && !bridge && side === (style.flyover ? -1 : 1)) {
       const px = side * (half + CURB_W + WALK_W - 0.25);
       b.cylinder(0.13, 8.6, px, 4.3, -10, '#5b5650', 6, 0.1);
       b.box(0.12, 0.12, 1.6, px, 8.1, -10, '#4a4640', 0, Math.PI / 2, 0);
@@ -244,7 +271,7 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
   }
 
   // Festival bunting strung across the road on some blocks; it flutters in the breeze.
-  if (rng.chance(0.3)) {
+  if (india && rng.chance(0.3)) {
     const bz = -rng.range(6, 18);
     const span = roadW + (CURB_W + 0.4) * 2;
     const n = Math.floor(span / 0.55);
@@ -325,7 +352,7 @@ function pick<T>(rng: Rng, arr: T[]): T {
 }
 
 /** Road surface texture for one block: worn asphalt, patches, lane dashes, edge lines. */
-export function roadTexture(laneCount: number, roadW: number, zebra: boolean, seed: number): HTMLCanvasElement {
+export function roadTexture(laneCount: number, roadW: number, zebra: boolean, seed: number, busLane = false): HTMLCanvasElement {
   const pxPerM = 28;
   const c = document.createElement('canvas');
   c.width = Math.round(roadW * pxPerM);
@@ -345,6 +372,19 @@ export function roadTexture(laneCount: number, roadW: number, zebra: boolean, se
     ctx.fillRect(rng.range(0, c.width - m(3)), rng.range(0, c.height - m(3)), m(rng.range(1.2, 3.2)), m(rng.range(1, 3)));
   }
   const laneW = roadW / laneCount;
+  if (busLane) {
+    // London-style red bus lane on the left, with BUS painted on it.
+    ctx.fillStyle = 'rgba(186,58,48,0.6)';
+    ctx.fillRect(m(0.3), 0, m(laneW - 0.3), c.height);
+    ctx.save();
+    ctx.fillStyle = 'rgba(236,231,218,0.85)';
+    ctx.font = `900 ${Math.round(m(1.1))}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.translate(m(laneW / 2), m(CHUNK_M * 0.25));
+    ctx.scale(1, 2.2);
+    ctx.fillText('BUS', 0, 0);
+    ctx.restore();
+  }
   for (let lane = 0; lane < laneCount; lane++) {
     const cx = m((lane + 0.5) * laneW);
     ctx.fillStyle = 'rgba(0,0,0,0.1)';
@@ -411,4 +451,152 @@ export function poolTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/** A tall New York tower: brick or glass, a grid of windows, water tank on the roof. */
+function buildSkyscraper(
+  b: GeoBuilder, glow: GeoBuilder, rng: Rng, style: CityStyle, lotX: number, side: number, z: number,
+  sign: ((w: number, h: number, x: number, y: number, z: number, side: number) => void) | null,
+): number {
+  const width = Math.min(CHUNK_M - z, rng.range(8, 12));
+  const depth = rng.range(12, 16);
+  const glass = rng.chance(0.4);
+  const floors = glass ? rng.int(22, 36) : rng.int(12, 20);
+  const fh = 3.2;
+  const h = floors * fh;
+  const cx = side * (lotX + 0.6 + depth / 2);
+  const cz = -(z + width / 2);
+  const face = side * (lotX + 0.6) - side * 0.02;
+  const wall = glass ? pick(rng, ['#3d5872', '#4a6680', '#2e4258']) : pick(rng, style.walls);
+  b.box(depth, h, width - 0.3, cx, h / 2, cz, wall);
+  // Setback crown on top.
+  b.box(depth * 0.7, fh * 2, (width - 0.3) * 0.7, cx + side * 1, h + fh, cz, glass ? '#5a7894' : wall);
+  b.box(depth + 0.3, 0.5, width, cx, 3.6, cz, glass ? '#2a3440' : '#cfc6b6');
+  const cols = Math.max(2, Math.floor((width - 1) / 1.5));
+  for (let f = 2; f < floors; f++) {
+    for (let c = 0; c < cols; c++) {
+      const wz = -(z + 0.9 + c * ((width - 1.4) / cols) + 0.35);
+      if (rng.chance(style.litRate * 0.7)) glow.box(0.08, 1.6, 0.8, face, f * fh + 1.5, wz, style.windowLit);
+      else if (!glass) b.box(0.08, 1.6, 0.8, face, f * fh + 1.5, wz, style.window);
+    }
+  }
+  // Wooden water tank on legs.
+  if (!glass) {
+    const tx = cx + side * rng.range(-2, 2);
+    for (const [lx, lz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]] as const) b.box(0.12, 2, 0.12, tx + lx, h + 1, cz + lz, '#3a2e24');
+    b.cylinder(1.0, 2.2, tx, h + 3.1, cz, '#7a5a3c', 10);
+    b.cylinder(1.05, 0.9, tx, h + 4.6, cz, '#4a3a2c', 10, 0.1);
+  }
+  // Lobby: lit glass doors and a sign over them.
+  glow.box(0.1, 2.6, width - 2.5, face - side * 0.03, 1.4, cz, '#ffe9c0');
+  if (sign) sign(Math.min(5, width - 2), 1.1, face - side * 0.14, 3.0, cz, side);
+  return width;
+}
+
+/** A London terrace house: brick, white sash windows, chimney, coloured door and railings. */
+function buildTerrace(
+  b: GeoBuilder, glow: GeoBuilder, rng: Rng, style: CityStyle, lotX: number, side: number, z: number,
+  sign: (w: number, h: number, x: number, y: number, z: number, side: number) => void, pools: number[],
+): number {
+  const width = Math.min(CHUNK_M - z, rng.range(4.6, 5.6));
+  const depth = rng.range(8, 10);
+  const floors = rng.int(3, 5);
+  const fh = 3;
+  const h = floors * fh;
+  const cx = side * (lotX + 1.4 + depth / 2);
+  const cz = -(z + width / 2);
+  const face = side * (lotX + 1.4) - side * 0.02;
+  const wall = pick(rng, style.walls);
+  b.box(depth, h, width - 0.08, cx, h / 2, cz, wall);
+  b.box(depth * 0.9, 1.6, width - 0.08, cx, h + 0.7, cz, '#4a4a52', 0, 0, 0);
+  // Chimney stack with pots.
+  b.box(0.9, 1.6, 0.7, cx - side * 1, h + 1.8, cz + width / 2 - 0.4, '#8c4f3e');
+  for (const dz of [-0.15, 0.15]) b.cylinder(0.1, 0.4, cx - side * 1, h + 2.8, cz + width / 2 - 0.4 + dz, '#b06a4e', 6);
+  const shop = rng.chance(0.4);
+  for (let f = 0; f < floors; f++) {
+    for (const c of [-1, 1]) {
+      if (f === 0 && (shop || c === -1)) continue;
+      const wz = cz + c * width * 0.22;
+      b.box(0.1, 1.7, 1.1, face, f * fh + 1.6, wz, '#f4f2ee');
+      if (rng.chance(style.litRate)) glow.box(0.12, 1.45, 0.85, face - side * 0.01, f * fh + 1.6, wz, style.windowLit);
+      else b.box(0.12, 1.45, 0.85, face - side * 0.01, f * fh + 1.6, wz, style.window);
+      b.box(0.14, 0.06, 1.0, face - side * 0.02, f * fh + 1.6, wz, '#f4f2ee');
+    }
+  }
+  if (shop) {
+    glow.box(0.12, 2.0, width - 1.2, face - side * 0.02, 1.2, cz, '#ffe2a8');
+    b.box(0.3, 0.7, width - 0.6, face - side * 0.15, 2.65, cz, pick(rng, style.awnings));
+    sign(width - 1.0, 0.55, face - side * 0.32, 2.65, cz, side);
+    pools.push(face - side * 1.6, cz, 2.2, 0);
+  } else {
+    // Front door with steps and black railings along the front.
+    b.box(0.12, 2.2, 1.0, face - side * 0.02, 1.4, cz - width * 0.22, pick(rng, ['#1f3d2e', '#7a1f2b', '#202a6e', '#111114', '#e8c36a']));
+    b.box(0.8, 0.3, 1.2, face - side * 0.4, 0.15, cz - width * 0.22, '#d8d2c4');
+    for (let k = 0; k < 6; k++) b.box(0.04, 0.9, 0.04, side * (lotX + 0.1), 0.45, cz - width / 2 + 0.4 + k * ((width - 0.8) / 5), '#111114');
+    b.box(0.05, 0.05, width - 0.6, side * (lotX + 0.1), 0.88, cz, '#111114');
+  }
+  // Small front area between pavement and house.
+  b.box(1.4, 0.04, width, side * (lotX + 0.7), 0.02, cz, '#8f8f88');
+  return width;
+}
+
+/** Bridge over a river: stone balustrade, ornate lamps, water far below. */
+function buildBridgeSide(b: GeoBuilder, glow: GeoBuilder, rng: Rng, lotX: number, side: number, pools: number[]): void {
+  b.box(70, 0.02, CHUNK_M, side * (lotX + 35), -6, -CHUNK_M / 2, '#4d6470');
+  b.box(0.6, 1.0, CHUNK_M, side * (lotX - 0.1), 0.5, -CHUNK_M / 2, '#cfc6b2');
+  b.box(0.7, 0.15, CHUNK_M, side * (lotX - 0.1), 1.05, -CHUNK_M / 2, '#e2d9c4');
+  // Bridge deck edge seen from above, and the pier below.
+  b.box(1.2, 6, CHUNK_M, side * (lotX + 0.3), -3, -CHUNK_M / 2, '#8f8676');
+  if (rng.chance(0.5)) b.box(4, 6, 3, side * (lotX - 1), -3.5, -12, '#7d7566');
+  for (const lz of [3, 15]) {
+    b.cylinder(0.1, 4.5, side * (lotX - 0.1), 3.3, -lz, '#1d2a24', 8);
+    b.box(0.3, 0.5, 0.3, side * (lotX - 0.1), 5.8, -lz, '#1d2a24');
+    glow.box(0.22, 0.35, 0.22, side * (lotX - 0.1), 5.8, -lz, '#ffe2a8');
+    pools.push(side * (lotX - 0.8), -lz, 3, 1);
+  }
+  // A boat on the water now and then.
+  if (rng.chance(0.4)) {
+    const bx = side * (lotX + rng.range(10, 30));
+    b.box(2.4, 1, 8, bx, -5.4, -rng.range(6, 18), pick(rng, ['#c8281f', '#202a6e', '#f4f2ee']));
+  }
+}
+
+/** Kerbside objects for New York and London. */
+function streetFurniture(b: GeoBuilder, glow: GeoBuilder, rng: Rng, kind: 'india' | 'ny' | 'london', x: number, z: number, side: number): void {
+  const r = rng.next();
+  if (kind === 'ny') {
+    if (r < 0.35) {
+      // Fire hydrant.
+      b.cylinder(0.16, 0.6, x, 0.46, z, '#c8281f', 8);
+      b.cylinder(0.2, 0.12, x, 0.8, z, '#c8281f', 8, 0.1);
+      b.box(0.5, 0.1, 0.1, x, 0.55, z, '#a52019');
+    } else if (r < 0.65) {
+      // Newspaper boxes.
+      for (let i = 0; i < 3; i++) b.box(0.45, 0.9, 0.45, x, 0.6, z + i * 0.5, pick(rng, ['#2b4a8a', '#c8281f', '#f2c230', '#2f9e74']));
+    } else {
+      // Mesh bin and a hot-dog cart umbrella.
+      b.cylinder(0.3, 0.9, x, 0.6, z, '#3a4a3e', 8);
+      if (rng.chance(0.5)) {
+        b.box(0.8, 0.9, 1.4, x, 0.6, z - 1.5, '#c9ccd2');
+        b.cylinder(1.0, 0.2, x, 2.2, z - 1.5, '#f2c230', 8, 0.05);
+        b.cylinder(0.04, 1.3, x, 1.5, z - 1.5, '#3a3a3e', 4);
+      }
+    }
+  } else {
+    if (r < 0.3) {
+      // Red phone box with lit panels.
+      b.box(0.95, 2.5, 0.95, x, 1.33, z, '#c8281f');
+      b.box(1.0, 0.2, 1.0, x, 2.65, z, '#a52019');
+      glow.box(0.97, 0.18, 0.5, x, 2.42, z, '#f4f2ee');
+      for (const s of [-1, 1]) b.box(0.02, 1.4, 0.6, x + s * 0.48, 1.3, z, '#3a4a5a');
+    } else if (r < 0.55) {
+      // Pillar post box.
+      b.cylinder(0.28, 1.4, x, 0.78, z, '#c8281f', 10);
+      b.cylinder(0.3, 0.2, x, 1.55, z, '#a52019', 10, 0.18);
+    } else {
+      // Black bollards.
+      for (let i = 0; i < 3; i++) b.cylinder(0.12, 0.9, x, 0.6, z + i * 1.2, '#111114', 8);
+    }
+  }
+  void side;
 }

@@ -1,5 +1,5 @@
 import { BALANCE as B } from '../data/balance';
-import { ObstacleKind, OBSTACLES, POTHOLES_ONLY, type ObstacleMix } from '../data/obstacles';
+import { ObstacleKind, OBSTACLES, POTHOLE_KINDS, POTHOLES_ONLY, type ObstacleMix } from '../data/obstacles';
 import type { VehicleDef } from '../data/vehicles';
 import { Rng } from '../core/rng';
 import { boxesOverlap, laneCenter, obstacleHalfH, obstacleHalfW } from './collision';
@@ -61,8 +61,9 @@ export class World {
     nearMiss: 0, nearMissPoints: 0, nearMissX: 0, nearMissY: 0, milestone: 0, coins: 0, bump: false,
   };
   readonly coins: Coin[] = [];
-  /** Coins picked up this run. */
+  /** Coins earned this run (pickups times the vehicle's coin bonus). */
   coinCount = 0;
+  private coinRaw = 0;
 
   t = 0;
   /** Distance travelled; the player's centre is at this y. */
@@ -139,9 +140,10 @@ export class World {
     for (const o of this.obstacles) o.active = false;
     for (const c of this.coins) c.active = false;
     this.coinCount = 0;
+    this.coinRaw = 0;
     this.t = 0;
     this.dist = this.prevDist = 0;
-    this.speed = B.startSpeed;
+    this.speed = B.startSpeed * this.vehicle.speedMul;
     this.speedMul = 1;
     this.throttle = 0;
     this.throttleMul = 1;
@@ -203,7 +205,7 @@ export class World {
 
     this.t += dt;
     if (this.speedMul < 1) this.speedMul = Math.min(1, this.speedMul + ((1 - B.hitSlowdown) * dt) / B.hitRecoverTime);
-    const base = speedAt(this.t);
+    const base = speedAt(this.t) * this.vehicle.speedMul;
     const want = this.throttle > 0 ? B.boostMul : this.throttle < 0 ? B.brakeMul : 1;
     const dm = B.throttleRate * dt;
     this.throttleMul += Math.max(-dm * 1.6, Math.min(dm, want - this.throttleMul));
@@ -268,7 +270,8 @@ export class World {
       }
       if (boxesOverlap(px, this.dist, phw + 0.15, phh, c.x, c.y, COIN_R, COIN_R)) {
         c.active = false;
-        this.coinCount++;
+        this.coinRaw++;
+        this.coinCount = Math.floor(this.coinRaw * this.vehicle.coinMul);
         this.events.coins++;
       }
     }
@@ -298,6 +301,14 @@ export class World {
       }
       if (o.hit || o.passed || this.invuln > 0) continue;
       if (boxesOverlap(px, this.dist, phw, phh, o.x, o.y, ohw, ohh)) {
+        // Tough vehicles roll through potholes with just a jolt.
+        const shrug =
+          POTHOLE_KINDS.has(o.kind) && (this.vehicle.shrugAll || (this.vehicle.shrugSmall && o.kind !== ObstacleKind.LargePothole));
+        if (shrug) {
+          o.hit = true;
+          this.events.bump = true;
+          continue;
+        }
         o.hit = true;
         this.dents--;
         this.invuln = B.invulnTime;
@@ -347,7 +358,7 @@ export class World {
     this.comboTimer = B.comboWindow;
     this.nearMisses++;
     if (this.combo > this.bestCombo) this.bestCombo = this.combo;
-    const pts = B.nearMissPoints * this.combo;
+    const pts = B.nearMissPoints * this.combo * this.vehicle.nearMissMul;
     this.bonus += pts;
     const e = this.events;
     e.nearMiss = this.combo;

@@ -60,9 +60,9 @@
               <span class="mi-name">Story Mode <span class="soon">Coming soon</span></span>
               <span class="mi-sub">500 km. Raj, Tanvi and Lara.</span>
             </button>
-            <button id="btnGarage" class="menu-item" type="button" aria-disabled="true">
-              <span class="mi-name">Garage <span class="soon">Coming soon</span></span>
-              <span class="mi-sub">Vehicles, paint and upgrades</span>
+            <button id="btnGarage" class="menu-item" type="button">
+              <span class="mi-name">Garage</span>
+              <span class="mi-sub">Buy and pick your ride</span>
             </button>
             <button id="btnSettings" class="menu-item" type="button">
               <span class="mi-name">Settings</span>
@@ -114,6 +114,34 @@
             <span class="chip"><span class="chip-dot chip-coin" aria-hidden="true"></span><span id="mapsCoins">0</span></span>
           </div>
           <div id="mapList" class="map-list" role="list"></div>
+        </div>
+      </section>
+
+      <section id="garage" class="overlay garage" hidden>
+        <div class="garage-head">
+          <button id="btnGarageBack" class="icon-btn" type="button" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+          <h2>Garage</h2>
+          <span class="chip"><span class="chip-dot chip-coin" aria-hidden="true"></span><span id="garageCoins">0</span></span>
+        </div>
+        <div class="garage-card" aria-live="polite">
+          <div class="gc-top">
+            <button id="btnVehPrev" class="gc-arrow" type="button" aria-label="Previous vehicle">‹</button>
+            <div class="gc-title">
+              <span id="gcCount" class="gc-count">1 / 7</span>
+              <span id="gcName" class="gc-name">Auto-rickshaw</span>
+            </div>
+            <button id="btnVehNext" class="gc-arrow" type="button" aria-label="Next vehicle">›</button>
+          </div>
+          <p id="gcPerk" class="gc-perk"></p>
+          <div class="gc-stats">
+            <span>Speed</span><span id="gcSpeed" class="gc-bar"></span>
+            <span>Handling</span><span id="gcHandling" class="gc-bar"></span>
+            <span>Dents</span><span id="gcDents" class="gc-bar"></span>
+          </div>
+          <button id="btnVehAction" class="btn" type="button">Selected</button>
+          <div id="gcDots" class="gc-dots" aria-hidden="true"></div>
         </div>
       </section>
 

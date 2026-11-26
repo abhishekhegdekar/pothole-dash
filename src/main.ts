@@ -1,7 +1,7 @@
 import './style.css';
 import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
-import { VEHICLES } from './data/vehicles';
+import { VEHICLES, VEHICLE_ORDER, isVehicleId, type VehicleDef } from './data/vehicles';
 import { isMapId, MAP_ORDER, MAPS, type MapDef } from './data/maps';
 import { Sfx } from './audio/sfx';
 import { Music } from './audio/music';
@@ -89,6 +89,16 @@ function boot(): void {
     btnMapsBack: el('btnMapsBack'),
     hudCoins: el('hudCoins'),
     pedals: el('pedals'),
+    garage: el('garage'),
+    garageCoins: el('garageCoins'),
+    gcCount: el('gcCount'),
+    gcName: el('gcName'),
+    gcPerk: el('gcPerk'),
+    gcSpeed: el('gcSpeed'),
+    gcHandling: el('gcHandling'),
+    gcDents: el('gcDents'),
+    gcDots: el('gcDots'),
+    btnVehAction: el<HTMLButtonElement>('btnVehAction'),
   };
 
   const store = new SaveStore();
@@ -99,7 +109,8 @@ function boot(): void {
   const music = new Music(sfx);
   const newSeed = (): number => (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
   let map: MapDef = isMapId(save.selectedMap) ? MAPS[save.selectedMap] : MAPS.mumbai;
-  const world = new World(VEHICLES.auto, newSeed(), map.laneCount, map.mix);
+  let vehicle: VehicleDef = isVehicleId(save.selectedVehicle) && save.ownedVehicles.includes(save.selectedVehicle) ? VEHICLES[save.selectedVehicle] : VEHICLES.auto;
+  const world = new World(vehicle, newSeed(), map.laneCount, map.mix);
   let renderer: GameRenderer;
   try {
     renderer = new Renderer3D(canvas, world, save.settings.graphics, map);
@@ -110,11 +121,13 @@ function boot(): void {
     canvas.replaceWith(fresh);
     renderer = new Renderer(fresh, world);
   }
+  renderer.setVehicle?.(vehicle.id);
   const input = new Input(el<HTMLCanvasElement>('game'));
   input.bindPedal(el('pedalGas'), 'gas');
   input.bindPedal(el('pedalBrake'), 'brake');
 
   let state: State = 'menu';
+  let garageOpen = false;
   let overReady = false;
   let overTimer = 0;
   let shownMeters = -1;
@@ -167,7 +180,7 @@ function boot(): void {
   renderWallet();
 
   const show = (which: HTMLElement | null): void => {
-    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps]) o.hidden = o !== which;
+    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
     ui.pedals.classList.toggle('is-hidden', which !== null || state === 'menu' || state === 'over');
   };
@@ -261,7 +274,7 @@ function boot(): void {
     map = next;
     save.selectedMap = map.id;
     store.save(save);
-    world.configure(VEHICLES.auto, map.laneCount, map.mix);
+    world.configure(vehicle, map.laneCount, map.mix);
     world.reset(newSeed());
     renderer.setMap?.(map);
     renderer.resetRun();
@@ -306,17 +319,6 @@ function boot(): void {
         useMap(m);
         start();
       });
-      ui.mapList.appendChild(card);
-    }
-    // Teaser for the next two cities.
-    for (const [name, cond] of [['New York', 'Snow · Neon night'], ['London', 'Drizzle · Fog']] as const) {
-      const card = document.createElement('div');
-      card.className = 'map-card is-soon';
-      card.setAttribute('role', 'listitem');
-      card.style.background = 'linear-gradient(135deg, #2a2d36, #464b58)';
-      card.innerHTML = `<span class="mc-cond"></span><span class="mc-name"></span><span class="mc-tag">Coming in the next update.</span><span class="mc-foot"><span></span><span class="mc-go">Soon</span></span>`;
-      card.querySelector('.mc-cond')!.textContent = cond;
-      card.querySelector('.mc-name')!.textContent = name;
       ui.mapList.appendChild(card);
     }
   };
@@ -379,7 +381,94 @@ function boot(): void {
     noteTimer = window.setTimeout(() => (ui.menuNote.textContent = ''), 2600);
   };
   ui.btnStory.addEventListener('click', () => note('Story Mode "500 km" arrives in a later step. Points you earn now carry over.'));
-  ui.btnGarage.addEventListener('click', () => note('The Garage opens in step 4. Keep your coins.'));
+  // Garage: browse the vehicles, buy with coins, pick one to drive.
+  let browse = VEHICLE_ORDER.indexOf(vehicle.id);
+  const bar = (host: HTMLElement, n: number, of: number): void => {
+    host.textContent = '';
+    for (let i = 0; i < of; i++) {
+      const b = document.createElement('i');
+      if (i < n) b.className = 'on';
+      host.appendChild(b);
+    }
+  };
+  const renderGarage = (): void => {
+    const v = VEHICLES[VEHICLE_ORDER[browse]!];
+    const owned = save.ownedVehicles.includes(v.id);
+    ui.garageCoins.textContent = fmt(save.coins);
+    ui.gcCount.textContent = `${browse + 1} / ${VEHICLE_ORDER.length}`;
+    ui.gcName.textContent = v.name;
+    ui.gcPerk.textContent = v.perk;
+    bar(ui.gcSpeed, v.speedRating, 5);
+    bar(ui.gcHandling, v.handlingRating, 5);
+    bar(ui.gcDents, v.dents, 5);
+    const btn = ui.btnVehAction;
+    const selected = v.id === vehicle.id;
+    btn.textContent = selected ? 'Driving this' : owned ? 'Drive this' : `Buy · ${fmt(v.price)} coins`;
+    btn.setAttribute('aria-disabled', String(selected || (!owned && save.coins < v.price)));
+    ui.gcDots.textContent = '';
+    VEHICLE_ORDER.forEach((id, i) => {
+      const d = document.createElement('i');
+      if (i === browse) d.classList.add('on');
+      if (save.ownedVehicles.includes(id)) d.classList.add('owned');
+      ui.gcDots.appendChild(d);
+    });
+    renderer.setVehicle?.(v.id);
+  };
+  const useVehicle = (v: VehicleDef): void => {
+    vehicle = v;
+    save.selectedVehicle = v.id;
+    store.save(save);
+    world.configure(vehicle, map.laneCount, map.mix);
+    world.reset(newSeed());
+    renderer.resetRun();
+    buildDents();
+  };
+  const step = (d: number): void => {
+    browse = (browse + d + VEHICLE_ORDER.length) % VEHICLE_ORDER.length;
+    sfx.unlock();
+    renderGarage();
+  };
+  const openGarage = (): void => {
+    sfx.unlock();
+    browse = VEHICLE_ORDER.indexOf(vehicle.id);
+    garageOpen = true;
+    renderGarage();
+    show(ui.garage);
+  };
+  const closeGarage = (): void => {
+    garageOpen = false;
+    renderer.setVehicle?.(vehicle.id);
+    renderWallet();
+    show(ui.menu);
+  };
+  ui.btnGarage.addEventListener('click', openGarage);
+  // Swipe across the open space above the card to flip through vehicles.
+  let swipeX = -1;
+  ui.garage.addEventListener('pointerdown', (e) => {
+    if (e.target === ui.garage) swipeX = e.clientX;
+  });
+  ui.garage.addEventListener('pointerup', (e) => {
+    if (swipeX >= 0 && Math.abs(e.clientX - swipeX) > 40) step(e.clientX < swipeX ? 1 : -1);
+    swipeX = -1;
+  });
+  el('btnGarageBack').addEventListener('click', closeGarage);
+  el('btnVehPrev').addEventListener('click', () => step(-1));
+  el('btnVehNext').addEventListener('click', () => step(1));
+  ui.btnVehAction.addEventListener('click', () => {
+    const v = VEHICLES[VEHICLE_ORDER[browse]!];
+    if (v.id === vehicle.id) return;
+    if (!save.ownedVehicles.includes(v.id)) {
+      if (save.coins < v.price) {
+        sfx.thud();
+        return;
+      }
+      save.coins -= v.price;
+      save.ownedVehicles.push(v.id);
+      sfx.ding(3);
+    }
+    useVehicle(v);
+    renderGarage();
+  });
   ui.btnSettings.addEventListener('click', () => show(ui.settings));
   ui.btnSettingsDone.addEventListener('click', () => show(ui.menu));
   const toMenu = (): void => {
@@ -425,7 +514,12 @@ function boot(): void {
     } else if (state === 'paused') {
       if (a === Action.Pause || a === Action.Confirm) resume();
     } else if (state === 'menu') {
-      if (a === Action.Confirm && ui.settings.hidden && ui.maps.hidden) openMaps();
+      if (!ui.garage.hidden) {
+        if (a === Action.Left) step(-1);
+        else if (a === Action.Right) step(1);
+        else if (a === Action.Confirm) ui.btnVehAction.click();
+        else if (a === Action.Pause) closeGarage();
+      } else if (a === Action.Confirm && ui.settings.hidden && ui.maps.hidden) openMaps();
     } else if (state === 'over' && overReady && a === Action.Confirm) {
       start();
     }
@@ -507,7 +601,7 @@ function boot(): void {
     music.update();
     sfx.setEngine(running || state === 'countdown', Math.min(1, renderer.speedFx + (world.throttleMul - 1) * 0.8));
     const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
-    renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? 'menu' : 'game');
+    renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? (garageOpen ? 'garage' : 'menu') : 'game');
     const fx = Math.round(renderer.speedFx * 100) / 100;
     if (fx !== shownFx) {
       shownFx = fx;
@@ -542,12 +636,17 @@ function boot(): void {
     }
   };
 
-  // Build the dent icons once.
-  for (let i = 0; i < world.vehicle.dents; i++) {
-    const s = document.createElement('span');
-    s.className = 'dent';
-    ui.dents.appendChild(s);
+  // The dent icons match the vehicle's dent count.
+  function buildDents(): void {
+    ui.dents.textContent = '';
+    for (let i = 0; i < world.vehicle.dents; i++) {
+      const s = document.createElement('span');
+      s.className = 'dent';
+      ui.dents.appendChild(s);
+    }
+    shownDents = -1;
   }
+  buildDents();
 
   show(ui.menu);
   startLoop(update, render);

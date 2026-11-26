@@ -232,8 +232,29 @@ h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 28px; 
 .map-card.is-locked .mc-go { background: rgba(255, 255, 255, 0.92); }
 .map-card.is-locked.cant-afford { cursor: not-allowed; }
 .map-card.is-locked.cant-afford .mc-go { background: rgba(255, 255, 255, 0.35); color: var(--chalk); }
-.map-card.is-soon { cursor: default; filter: saturate(0.4); }
-.map-card.is-soon .mc-go { background: rgba(255, 255, 255, 0.2); color: var(--chalk); }
+
+/* Garage: the 3D vehicle turns at the top, the card sits at the bottom. */
+.garage { display: flex; flex-direction: column; align-items: stretch; justify-content: space-between; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); background: linear-gradient(180deg, rgba(12, 13, 16, 0.55), transparent 22%, transparent 48%, rgba(12, 13, 16, 0.75)); }
+.garage-head { display: flex; align-items: center; gap: 12px; width: min(100%, 520px); margin: 0 auto; }
+.garage-head h2 { margin: 0; flex: 1; font-family: var(--display); font-size: 24px; }
+.garage-card { width: min(100%, 520px); margin: 0 auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 18px; background: rgba(21, 22, 26, 0.88); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(6px); }
+.gc-top { display: flex; align-items: center; gap: 10px; }
+.gc-title { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.gc-count { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 800; color: var(--muted); }
+.gc-name { font-family: var(--display); font-size: 26px; line-height: 1.1; }
+.gc-arrow { width: 44px; height: 44px; flex: none; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.1); color: var(--chalk); font-size: 28px; line-height: 1; cursor: pointer; }
+.gc-arrow:active { background: rgba(255, 255, 255, 0.2); }
+.gc-arrow:focus-visible { outline: 3px solid var(--chalk); outline-offset: 2px; }
+.gc-perk { margin: 0; text-align: center; font-size: 14px; color: var(--chalk); min-height: 2.6em; }
+.gc-stats { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; font-size: 13px; font-weight: 700; color: var(--muted); }
+.gc-bar { display: flex; gap: 4px; }
+.gc-bar i { flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); }
+.gc-bar i.on { background: var(--saffron); }
+.gc-dots { display: flex; justify-content: center; gap: 6px; }
+.gc-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); }
+.gc-dots i.on { background: var(--saffron); }
+.gc-dots i.owned { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5); }
+#btnVehAction[aria-disabled='true'] { background: rgba(255, 255, 255, 0.16); color: var(--chalk); box-shadow: none; cursor: default; }
 
 /* Brake and boost pedals (touch screens) */
 .pedals { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; padding: 0 max(14px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 14px) max(14px, env(safe-area-inset-left, 0px)); pointer-events: none; transition: opacity 0.2s; }
