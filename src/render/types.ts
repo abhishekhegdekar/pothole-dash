@@ -18,6 +18,8 @@ export interface GameRenderer {
   readonly speedFx: number;
   /** Switches city look, lighting and weather. Optional: the 2D fallback has one look. */
   setMap?(map: MapDef): void;
+  /** Roof gun shot at a world position (Story Mode). */
+  shot?(x: number, y: number): void;
   /** Swaps the player's vehicle model. */
   setVehicle?(id: VehicleId): void;
 }

@@ -1,6 +1,7 @@
 import './style.css';
 import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
+import { STORY_ROAD, STORY_TEST_RULES } from './data/story';
 import { VEHICLES, VEHICLE_ORDER, isVehicleId, type VehicleDef } from './data/vehicles';
 import { isMapId, MAP_ORDER, MAPS, type MapDef } from './data/maps';
 import { Sfx } from './audio/sfx';
@@ -99,6 +100,9 @@ function boot(): void {
     gcDents: el('gcDents'),
     gcDots: el('gcDots'),
     btnVehAction: el<HTMLButtonElement>('btnVehAction'),
+    hudFuel: el('hudFuel'),
+    hudFuelFill: el('hudFuelFill'),
+    hudCoinDot: el('hudCoinDot'),
   };
 
   const store = new SaveStore();
@@ -127,6 +131,9 @@ function boot(): void {
   input.bindPedal(el('pedalBrake'), 'brake');
 
   let state: State = 'menu';
+  /** Free Run or the Story Mode test drive. `road` is the map being driven right now. */
+  let mode: 'free' | 'story' = 'free';
+  let road: MapDef = map;
   let garageOpen = false;
   let overReady = false;
   let overTimer = 0;
@@ -241,13 +248,18 @@ function boot(): void {
     state = 'over';
     const d = world.dist;
     const score = world.score;
-    const isBest = score > save.bestScore;
+    const story = mode === 'story';
+    const isBest = !story && score > save.bestScore;
     save.runs++;
     if (isBest) save.bestScore = score;
-    save.points += score;
-    save.coins += world.coinCount;
-    save.bestByMap[map.id] = Math.max(save.bestByMap[map.id] ?? 0, score);
-    if (d > save.bestDistance) save.bestDistance = d;
+    if (story) {
+      save.scrap += world.coinCount;
+    } else {
+      save.points += score;
+      save.coins += world.coinCount;
+      save.bestByMap[map.id] = Math.max(save.bestByMap[map.id] ?? 0, score);
+      if (d > save.bestDistance) save.bestDistance = d;
+    }
     store.save(save);
     ui.overDist.textContent = formatDistance(d);
     ui.overScore.textContent = score.toLocaleString('en-IN');
@@ -255,10 +267,17 @@ function boot(): void {
     ui.overCombo.textContent = world.bestCombo > 1 ? `×${world.bestCombo}` : String(world.bestCombo);
     ui.overBest.textContent = `Best score: ${save.bestScore.toLocaleString('en-IN')} · Best distance: ${formatDistance(save.bestDistance)}`;
     ui.overBadge.hidden = !isBest;
-    ui.overTitle.textContent = isBest ? 'New record!' : 'Auto broke down!';
+    ui.overTitle.textContent = story
+      ? (world.endReason === 'fuel' ? 'Out of fuel!' : 'The SUV is wrecked!')
+      : isBest ? 'New record!' : `${vehicle.id === 'auto' ? 'Auto' : vehicle.name} broke down!`;
     const earned: string[] = [];
-    if (world.coinCount > 0) earned.push(`+${fmt(world.coinCount)} coins`);
-    if (score > 0) earned.push(`+${fmt(score)} points for Story Mode`);
+    if (story) {
+      earned.push(`${world.kills} zombies knocked down`);
+      if (world.coinCount > 0) earned.push(`+${fmt(world.coinCount)} scrap`);
+    } else {
+      if (world.coinCount > 0) earned.push(`+${fmt(world.coinCount)} coins`);
+      if (score > 0) earned.push(`+${fmt(score)} points for Story Mode`);
+    }
     ui.overEarned.textContent = earned.join(' · ');
     renderWallet();
     overTimer = window.setTimeout(() => {
@@ -274,10 +293,26 @@ function boot(): void {
     map = next;
     save.selectedMap = map.id;
     store.save(save);
+    road = map;
     world.configure(vehicle, map.laneCount, map.mix);
     world.reset(newSeed());
     renderer.setMap?.(map);
     renderer.resetRun();
+  };
+  /** Sets up the world, 3D view and HUD for Free Run or Story Mode. */
+  const setMode = (next: 'free' | 'story'): void => {
+    if (next === mode) return;
+    mode = next;
+    road = mode === 'story' ? STORY_ROAD : map;
+    const v = mode === 'story' ? VEHICLES.rig : vehicle;
+    world.configure(v, road.laneCount, road.mix, mode === 'story' ? STORY_TEST_RULES : undefined);
+    world.reset(newSeed());
+    renderer.setVehicle?.(v.id);
+    renderer.setMap?.(road);
+    renderer.resetRun();
+    buildDents();
+    ui.hudFuel.hidden = mode !== 'story';
+    ui.hudCoinDot.className = `chip-dot ${mode === 'story' ? 'chip-scrap' : 'chip-coin'}`;
   };
   const renderMaps = (): void => {
     ui.mapList.textContent = '';
@@ -316,6 +351,7 @@ function boot(): void {
           renderMaps();
           return;
         }
+        setMode('free');
         useMap(m);
         start();
       });
@@ -374,13 +410,10 @@ function boot(): void {
   }
   ui.btnGfxHigh.addEventListener('click', () => setGfx('high'));
   ui.btnGfxLow.addEventListener('click', () => setGfx('low'));
-  let noteTimer = 0;
-  const note = (text: string): void => {
-    ui.menuNote.textContent = text;
-    window.clearTimeout(noteTimer);
-    noteTimer = window.setTimeout(() => (ui.menuNote.textContent = ''), 2600);
-  };
-  ui.btnStory.addEventListener('click', () => note('Story Mode "500 km" arrives in a later step. Points you earn now carry over.'));
+  ui.btnStory.addEventListener('click', () => {
+    setMode('story');
+    start();
+  });
   // Garage: browse the vehicles, buy with coins, pick one to drive.
   let browse = VEHICLE_ORDER.indexOf(vehicle.id);
   const bar = (host: HTMLElement, n: number, of: number): void => {
@@ -430,6 +463,7 @@ function boot(): void {
   };
   const openGarage = (): void => {
     sfx.unlock();
+    setMode('free');
     browse = VEHICLE_ORDER.indexOf(vehicle.id);
     garageOpen = true;
     renderGarage();
@@ -480,6 +514,7 @@ function boot(): void {
     world.reset(newSeed());
     renderer.resetRun();
     state = 'menu';
+    setMode('free');
     renderWallet();
     show(ui.menu);
   };
@@ -525,6 +560,7 @@ function boot(): void {
     }
   };
 
+  const laneCenterX = (): number => (world.lanePos + 0.5) * world.roadWidth / world.laneCount;
   const update = (dt: number): void => {
     input.drain(onAction);
     world.throttle = state === 'play' ? input.throttle : 0;
@@ -562,6 +598,21 @@ function boot(): void {
         replay(ui.hudCoins.parentElement!, 'pop');
       }
       coinStreakT -= dt;
+      if (ev.rams > 0) {
+        sfx.whack();
+        renderer.burst(ev.ramX, ev.ramY);
+        renderer.addShake(ev.rams > 1 ? 9 : 5);
+        renderer.popText(`+${ev.rams * 5}`, ev.ramX, ev.ramY + 1, '#c9e08a', 18);
+        vibrate(20);
+      }
+      if (ev.shot) {
+        sfx.shot();
+        renderer.shot?.(ev.shotX, ev.shotY);
+      }
+      if (ev.fuel) {
+        sfx.fuel();
+        renderer.popText('Fuel +40%', laneCenterX(), world.dist + 2, '#ffc21a', 20);
+      }
       if (ev.bump) {
         sfx.bump();
         renderer.addShake(7);
@@ -576,7 +627,7 @@ function boot(): void {
           renderer.crash(world.targetLane >= 1 ? 1 : -1);
         } else {
           sfx.thud();
-          renderer.popText('−1 dent', ev.hitX, ev.hitY + 1, '#ff7a63', 20);
+          renderer.popText(mode === 'story' ? '−1 armour' : '−1 dent', ev.hitX, ev.hitY + 1, '#ff7a63', 20);
         }
         vibrate(ev.crash ? 120 : 40);
       }
@@ -595,8 +646,12 @@ function boot(): void {
     music.setMood(
       state === 'menu' ? 'menu' : state === 'over' ? 'over' : 'run',
       Math.min(1, renderer.speedFx * 0.85 + Math.min(world.combo, 6) * 0.04),
-      map.music,
+      road.music,
     );
+    if (mode === 'story') {
+      ui.hudFuelFill.style.transform = `scaleX(${world.fuel.toFixed(3)})`;
+      ui.hudFuel.classList.toggle('is-low', world.fuel < 0.22);
+    }
     music.setMuffled(state === 'paused');
     music.update();
     sfx.setEngine(running || state === 'countdown', Math.min(1, renderer.speedFx + (world.throttleMul - 1) * 0.8));

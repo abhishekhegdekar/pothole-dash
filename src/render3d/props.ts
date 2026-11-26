@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Rng } from '../core/rng';
 import { ALL_KINDS, ObstacleKind, OBSTACLES } from '../data/obstacles';
 import { GeoBuilder } from './geo';
+import { kaaliPeeli, roundedBox, shapedCar, type CarStyle } from './cars';
 
 /**
  * Low-poly obstacles and roadside vehicles, each built as one vertex-coloured geometry.
@@ -19,30 +20,13 @@ function wheel(b: GeoBuilder, x: number, y: number, z: number, r: number, w: num
   b.add(new THREE.CylinderGeometry(r * 0.5, r * 0.5, w + 0.02, 8), HUB, x, y, z, 0, 0, Math.PI / 2);
 }
 
-/** A hatchback-sized car. With `taxi`, Mumbai's black body and yellow top. */
-export function car(b: GeoBuilder, x: number, z: number, body: string, dir: -1 | 1 = -1, taxi = false, len = 3.9, roofSign: string | null = null): void {
-  const f = dir; // front is at z + f * 2
-  const k = len / 3.9;
-  const top = taxi ? '#f3c316' : body;
-  const lower = taxi ? '#1d1d21' : body;
-  b.box(1.76, 0.62, len, x, 0.62, z, lower);
-  b.box(1.78, 0.08, len + 0.04, x, 0.95, z, shade(lower, 0.85));
-  // Cabin, a little back from the centre, with glass all round.
-  b.box(1.56, 0.58, 2.0 * k, x, 1.27, z - f * 0.25 * k, top);
-  b.box(1.6, 0.42, 0.06, x, 1.24, z + f * 0.78 * k, GLASS, -f * 0.5);
-  b.box(1.6, 0.42, 0.06, x, 1.24, z - f * 1.28 * k, GLASS, f * 0.5);
-  for (const s of [-1, 1]) b.box(0.04, 0.36, 1.7 * k, x + s * 0.79, 1.27, z - f * 0.25 * k, GLASS);
-  // Lights and bumpers.
-  const e = len / 2;
-  for (const s of [-1, 1]) {
-    b.box(0.34, 0.14, 0.05, x + s * 0.6, 0.78, z + f * (e + 0.01), HEAD);
-    b.box(0.3, 0.14, 0.05, x + s * 0.62, 0.8, z - f * (e + 0.01), TAIL);
+/** A car in traffic. With `taxi`, Mumbai's black-and-yellow taxi. */
+export function car(b: GeoBuilder, x: number, z: number, body: string, dir: -1 | 1 = -1, taxi = false, len = 3.9, roofSign: string | null = null, style: CarStyle = 'sedan'): void {
+  if (taxi) {
+    kaaliPeeli(b, x, z, dir);
+    return;
   }
-  b.box(1.8, 0.16, 0.12, x, 0.42, z + f * (e + 0.03), '#2a2a2e');
-  b.box(1.8, 0.16, 0.12, x, 0.42, z - f * (e + 0.03), '#2a2a2e');
-  if (taxi) b.box(0.6, 0.18, 0.28, x, 1.65, z - f * 0.25, '#f3c316');
-  if (roofSign) b.box(0.7, 0.22, 0.3, x, 1.67, z - f * 0.25 * k, roofSign);
-  for (const s of [-1, 1]) for (const zz of [1.25 * k, -1.25 * k]) wheel(b, x + s * 0.8, 0.33, z + zz, 0.33, 0.22);
+  shapedCar(b, x, z, { style, len, body, dir, roofSign });
 }
 
 export function parkedTaxi(b: GeoBuilder, x: number, z: number, side: number): void {
@@ -52,7 +36,7 @@ export function parkedTaxi(b: GeoBuilder, x: number, z: number, side: number): v
 /** Red city bus, 9 m long. */
 function bus(b: GeoBuilder, variant: number): void {
   const red = variant === 0 ? '#c8281f' : '#b5361d';
-  b.box(2.45, 2.5, 8.9, 0, 1.65, 0, red);
+  roundedBox(b, 2.45, 2.5, 8.9, 0, 1.65, 0, red, 0.2);
   b.box(2.47, 0.35, 8.92, 0, 0.55, 0, '#3a3a3e');
   b.box(2.5, 0.2, 8.95, 0, 1.55, 0, '#f2efe6');
   // Window band down both sides, windscreen and the route board.
@@ -260,9 +244,8 @@ function steamVent(b: GeoBuilder, variant: number): void {
 function deliveryTruck(b: GeoBuilder, variant: number): void {
   const box = ['#f4f2ee', '#d9d4c8', '#c9d6df'][variant]!;
   const cab = ['#2b4a8a', '#c8281f', '#3a3a3e'][variant]!;
-  b.box(2.3, 2.6, 4.6, 0, 1.75, 0.9, box);
-  b.box(2.32, 0.1, 4.62, 0, 3.08, 0.9, shade(box, 0.85));
-  b.box(2.2, 1.9, 1.7, 0, 1.4, -2.3, cab);
+  roundedBox(b, 2.3, 2.6, 4.6, 0, 1.75, 0.9, box, 0.08);
+  roundedBox(b, 2.2, 1.9, 1.7, 0, 1.4, -2.3, cab, 0.18);
   b.box(2.0, 0.8, 0.06, 0, 1.85, -3.16, GLASS);
   b.box(2.3, 0.4, 6.4, 0, 0.45, -0.1, '#2a2a2e');
   for (const s of [-1, 1]) {
@@ -295,24 +278,9 @@ function jaywalker(b: GeoBuilder, variant: number): void {
   if (variant === 3) b.blob(0.18, 0.3, 1.5, 0, '#7a1f2b', 1);
 }
 
-/** Black London cab: tall rounded cabin and an amber roof light. */
-function blackCab(b: GeoBuilder): void {
-  b.box(1.76, 0.7, 4.3, 0, 0.66, 0, '#141416');
-  b.box(1.62, 0.78, 2.6, 0, 1.38, 0.35, '#141416');
-  b.box(1.66, 0.5, 0.06, 0, 1.4, -0.98, GLASS, 0.35);
-  for (const s of [-1, 1]) b.box(0.04, 0.45, 2.3, s * 0.82, 1.42, 0.35, GLASS);
-  b.box(0.6, 0.2, 0.3, 0, 1.86, 0.1, '#ffb020');
-  b.box(1.0, 0.5, 0.08, 0, 0.75, -2.17, '#c9ccd2');
-  for (const s of [-1, 1]) {
-    b.cylinder(0.14, 0.06, s * 0.62, 0.85, -2.18, HEAD, 10);
-    b.box(0.25, 0.2, 0.05, s * 0.66, 0.85, 2.17, TAIL);
-  }
-  for (const s of [-1, 1]) for (const zz of [1.35, -1.35]) wheel(b, s * 0.82, 0.36, zz, 0.36, 0.24);
-}
-
 function doubleDecker(b: GeoBuilder): void {
   const red = '#c8281f';
-  b.box(2.5, 4.2, 9.8, 0, 2.4, 0, red);
+  roundedBox(b, 2.5, 4.2, 9.8, 0, 2.4, 0, red, 0.22);
   b.box(2.52, 0.3, 9.82, 0, 0.45, 0, '#2a2a2e');
   for (const s of [-1, 1]) {
     b.box(0.05, 0.9, 8.6, s * 1.26, 1.9, 0.3, GLASS);
@@ -364,6 +332,74 @@ const BIKES = ['#b8262b', '#202226', '#2c5c9e', '#d8d4cc'];
 const DELIVERY = ['#f07a1a', '#2f9e74', '#d8432f'];
 
 /** One geometry per obstacle kind and variant. Potholes are drawn separately and get an empty slot. */
+const ZOMBIE_SKIN = ['#8fa08a', '#9aa58f', '#7f927f', '#a3a894'];
+const ZOMBIE_SHIRTS = ['#5a6470', '#7a5a4a', '#4f5f4a', '#8a8070', '#6a4a5a', '#4a5468'];
+
+/**
+ * A shambling zombie: hunched, head tilted, arms reaching toward the player (+z).
+ * Torn, faded clothes and grey-green skin. No blood.
+ */
+function zombie(b: GeoBuilder, x: number, z: number, v: number): void {
+  const skin = ZOMBIE_SKIN[v % ZOMBIE_SKIN.length]!;
+  const shirt = ZOMBIE_SHIRTS[v % ZOMBIE_SHIRTS.length]!;
+  const legs = v % 3 === 0 ? '#2c3140' : v % 3 === 1 ? '#4a4038' : '#3a3a3e';
+  const lean = 0.22 + (v % 3) * 0.06;
+  // Legs mid-stagger.
+  b.box(0.18, 0.82, 0.2, x - 0.12, 0.41, z - 0.06, legs, 0.12);
+  b.box(0.18, 0.82, 0.2, x + 0.12, 0.41, z + 0.1, legs, -0.18);
+  b.box(0.2, 0.08, 0.3, x - 0.12, 0.04, z - 0.02, '#26221e');
+  // Hunched torso with a torn hem.
+  b.box(0.5, 0.64, 0.3, x, 1.12, z + 0.06, shirt, lean);
+  b.box(0.18, 0.14, 0.04, x + 0.12, 0.84, z + 0.2, shade(shirt, 0.7), 0.3);
+  b.box(0.12, 0.18, 0.04, x - 0.14, 0.86, z + 0.18, shade(shirt, 0.8), -0.2);
+  // Head drooping to one side.
+  b.box(0.27, 0.29, 0.27, x + (v % 2 ? 0.05 : -0.05), 1.56, z + 0.18, skin, 0.25, 0, v % 2 ? 0.25 : -0.25);
+  b.box(0.29, 0.08, 0.29, x + (v % 2 ? 0.07 : -0.07), 1.72, z + 0.16, '#3a3028', 0.25, 0, v % 2 ? 0.25 : -0.25);
+  b.box(0.18, 0.04, 0.02, x, 1.58, z + 0.32, '#2a2a24', 0.25);
+  // Arms reaching forward, one higher than the other.
+  b.box(0.12, 0.12, 0.62, x - 0.31, 1.28, z + 0.36, shirt, -0.15 - (v % 2) * 0.15);
+  b.box(0.12, 0.12, 0.62, x + 0.31, 1.22, z + 0.36, shirt, 0.05);
+  b.box(0.11, 0.1, 0.16, x - 0.31, 1.34 + (v % 2) * 0.1, z + 0.72, skin);
+  b.box(0.11, 0.1, 0.16, x + 0.31, 1.2, z + 0.72, skin);
+}
+
+function horde(b: GeoBuilder, v: number): void {
+  zombie(b, -1.15, 0.15, v);
+  zombie(b, 0.05, -0.3, v + 2);
+  zombie(b, 1.15, 0.25, v + 4);
+}
+
+/** Burnt-out car: scorched paint, rust, broken glass, a flat tyre. */
+function wreck(b: GeoBuilder, v: number): void {
+  const paint = ['#3a3430', '#4a3a2e', '#33383c'][v]!;
+  b.box(1.8, 0.6, 4.0, 0, 0.55, 0, paint, 0, 0, v === 1 ? 0.06 : -0.04);
+  b.box(1.6, 0.55, 2.1, 0, 1.12, 0.2, shade(paint, 0.85), 0, 0, v === 1 ? 0.06 : -0.04);
+  b.box(1.5, 0.45, 0.05, 0, 1.12, -0.86, '#1a1a1c', 0.4);
+  for (const s of [-1, 1]) b.box(0.05, 0.4, 1.8, s * 0.81, 1.13, 0.2, '#1c1c1e');
+  // Rust and scorch patches.
+  b.box(0.7, 0.04, 0.9, 0.3, 0.87, -1.3, '#7a3f22');
+  b.box(0.5, 0.04, 0.6, -0.4, 1.41, 0.5, '#6b3a20');
+  b.box(0.9, 0.05, 0.5, -0.2, 0.86, 1.5, '#1e1a18');
+  // Crumpled bonnet up at an angle.
+  b.box(1.6, 0.06, 1.0, 0, 0.98, -1.55, shade(paint, 1.1), -0.35);
+  for (const sx of [-1, 1]) for (const zz of [1.3, -1.3]) {
+    const flat = sx === 1 && zz > 0;
+    wheel(b, sx * 0.82, flat ? 0.26 : 0.34, zz, 0.34, 0.24);
+  }
+  if (v === 2) b.box(0.4, 0.3, 0.4, -1.2, 0.15, 1.6, '#5a5048');
+}
+
+/** A red jerrycan: the fuel pickup in Story Mode. */
+export function fuelCanGeo(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.box(0.62, 0.78, 0.3, 0, 0, 0, '#c8281f');
+  b.box(0.64, 0.06, 0.32, 0, -0.2, 0, '#9a1d16');
+  b.box(0.64, 0.06, 0.32, 0, 0.16, 0, '#9a1d16');
+  b.box(0.36, 0.1, 0.12, -0.08, 0.46, 0, '#2a2a2e');
+  b.cylinder(0.07, 0.16, 0.2, 0.46, 0, '#e8c33a', 8);
+  return b.build();
+}
+
 export function buildObstacleGeos(roadW: number): THREE.BufferGeometry[][] {
   const out: THREE.BufferGeometry[][] = [];
   for (const kind of ALL_KINDS) {
@@ -382,15 +418,18 @@ export function buildObstacleGeos(roadW: number): THREE.BufferGeometry[][] {
         case ObstacleKind.Bus: bus(b, v); break;
         case ObstacleKind.Taxi: car(b, 0, 0, '#1d1d21', -1, true); break;
         case ObstacleKind.DeliveryBike: motorbike(b, -1, SHIRTS[(v + 2) % SHIRTS.length]!, '#2a2c30', DELIVERY[v % DELIVERY.length]!); break;
-        case ObstacleKind.StoppedCar: car(b, 0, 0, CAR_COLOURS[v % CAR_COLOURS.length]!, -1, false); break;
+        case ObstacleKind.StoppedCar: car(b, 0, 0, CAR_COLOURS[v % CAR_COLOURS.length]!, -1, false, v % 2 ? 3.7 : 4.1, null, v % 2 ? 'hatch' : 'sedan'); break;
         case ObstacleKind.SteamVent: steamVent(b, v); break;
         case ObstacleKind.DeliveryTruck: deliveryTruck(b, v); break;
         case ObstacleKind.Jaywalker: jaywalker(b, v); break;
-        case ObstacleKind.YellowCab: car(b, 0, 0, v ? '#f2b705' : '#f6c21a', -1, false, 4.5, '#f4f2ee'); break;
+        case ObstacleKind.YellowCab: car(b, 0, 0, v ? '#f2b705' : '#f6c21a', -1, false, 4.6, '#f4f2ee'); break;
         case ObstacleKind.Cyclist: cyclist(b, v); break;
         case ObstacleKind.DoubleDecker: doubleDecker(b); break;
         case ObstacleKind.Roadworks: roadworks(b, v); break;
-        case ObstacleKind.BlackCab: blackCab(b); break;
+        case ObstacleKind.BlackCab: shapedCar(b, 0, 0, { style: 'london', len: 4.4, body: '#141416', roofSign: '#ffb020', vintage: true }); break;
+        case ObstacleKind.Zombie: zombie(b, 0, 0, v); break;
+        case ObstacleKind.Horde: horde(b, v); break;
+        case ObstacleKind.Wreck: wreck(b, v); break;
         default: break;
       }
       list.push(b.build());
@@ -443,29 +482,36 @@ export function playerVehicleGeo(id: string): THREE.BufferGeometry {
       break;
     }
     case 'hatch':
-      car(b, 0, 0, '#d8432f', -1, false, 3.7);
+      shapedCar(b, 0, 0, { style: 'hatch', len: 3.7, body: '#d8432f' });
       break;
     case 'suv': {
-      b.box(1.95, 0.85, 4.5, 0, 0.85, 0, '#e8e4da');
-      b.box(1.97, 0.1, 4.52, 0, 1.3, 0, '#c9c4b8');
-      b.box(1.8, 0.75, 2.9, 0, 1.72, 0.35, '#e8e4da');
-      b.box(1.84, 0.5, 0.06, 0, 1.7, -1.12, GLASS, 0.4);
-      b.box(1.84, 0.5, 0.06, 0, 1.72, 1.82, GLASS, -0.2);
-      for (const s of [-1, 1]) b.box(0.04, 0.48, 2.6, s * 0.91, 1.74, 0.35, GLASS);
-      for (const s of [-1, 1]) b.box(0.06, 0.08, 2.6, s * 0.7, 2.14, 0.35, '#2a2a2e');
-      for (const zz of [-0.6, 0.6, 1.4]) b.box(1.4, 0.05, 0.06, 0, 2.14, zz, '#2a2a2e');
-      b.box(2.0, 0.3, 0.2, 0, 0.55, -2.3, '#2a2a2e');
-      for (const s of [-1, 1]) {
-        b.box(0.4, 0.16, 0.05, s * 0.66, 1.05, -2.26, HEAD);
-        b.box(0.18, 0.4, 0.05, s * 0.86, 1.2, 2.26, TAIL);
-      }
-      for (const s of [-1, 1]) for (const zz of [1.45, -1.45]) wheel(b, s * 0.9, 0.42, zz, 0.42, 0.3);
+      shapedCar(b, 0, 0, { style: 'suv', len: 4.5, body: '#e8e4da' });
+      for (const s2 of [-1, 1]) b.box(0.06, 0.08, 2.2, s2 * 0.72, 1.92, 0.3, '#2a2a2e');
+      b.box(1.9, 0.22, 0.16, 0, 0.62, -2.3, '#2a2a2e');
       break;
     }
     case 'cab':
-      car(b, 0, 0, '#f6c21a', -1, false, 4.2, '#f4f2ee');
-      b.box(1.78, 0.18, 4.22, 0, 0.82, 0, '#1d1d21');
+      kaaliPeeli(b, 0, 0);
       break;
+    case 'rig': {
+      // Raj's SUV: dark olive, mesh over the windows, ram bar, roof gun and spare cans.
+      const body = '#5f6a4c';
+      shapedCar(b, 0, 0, { style: 'suv', len: 4.6, body });
+      // Wire mesh over the side windows.
+      for (const s2 of [-1, 1]) for (const zz of [-0.7, -0.2, 0.3, 0.8, 1.3]) b.box(0.03, 0.56, 0.03, s2 * 0.91, 1.5, zz, '#1e1e20');
+      // Ram bar: thick pipes across the front.
+      for (const yy of [0.62, 1.0]) b.box(2.15, 0.12, 0.12, 0, yy, -2.46, '#6a6e72');
+      for (const xx of [-0.85, -0.3, 0.3, 0.85]) b.box(0.1, 0.6, 0.12, xx, 0.8, -2.46, '#5a5e62');
+      b.box(1.2, 0.2, 0.3, 0, 0.4, -2.38, '#2a2a2e');
+      // Roof rack, spare cans and the gun turret.
+      for (const s2 of [-1, 1]) b.box(0.06, 0.08, 2.4, s2 * 0.72, 1.96, 0.35, '#2a2a2e');
+      b.box(0.3, 0.42, 0.5, -0.5, 2.18, 1.15, '#c8281f');
+      b.box(0.3, 0.42, 0.5, -0.16, 2.18, 1.15, '#c8281f');
+      b.cylinder(0.3, 0.2, 0.35, 2.02, 0.05, '#2e3030', 10);
+      b.box(0.36, 0.28, 0.5, 0.35, 2.24, 0.0, '#3a3c3c');
+      b.box(0.08, 0.08, 0.9, 0.35, 2.28, -0.65, '#1a1a1c');
+      break;
+    }
     default:
       break;
   }

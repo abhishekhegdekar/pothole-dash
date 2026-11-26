@@ -4,8 +4,11 @@ import { VEHICLES } from '../src/data/vehicles';
 import { BALANCE as B } from '../src/data/balance';
 import { blocksLane, obstacleHalfH } from '../src/systems/collision';
 import { World } from '../src/systems/world';
-import { MAPS, MAP_ORDER } from '../src/data/maps';
-import { OBSTACLES } from '../src/data/obstacles';
+import { MAPS, MAP_ORDER, type MapDef } from '../src/data/maps';
+import { STORY_ROAD, STORY_TEST_RULES } from '../src/data/story';
+import type { VehicleId } from '../src/data/vehicles';
+import type { RunRules } from '../src/systems/world';
+import { ObstacleKind, OBSTACLES } from '../src/data/obstacles';
 import { laneCenter, obstacleHalfW } from '../src/systems/collision';
 
 describe('World', () => {
@@ -50,15 +53,21 @@ describe('World', () => {
     }
   });
 
-  for (const [id, vid] of MAP_ORDER.flatMap((m) => (['auto', 'suv', 'scooter'] as const).map((v) => [m, v] as const))) {
-    it(`a look-ahead bot gets through ${MAPS[id].name} in the ${vid} with at most 2 knocks`, () => {
+  const runs: Array<[string, MapDef, VehicleId, RunRules | undefined]> = [
+    ...MAP_ORDER.flatMap((m) => (['auto', 'suv', 'scooter'] as const).map((v) => [MAPS[m].name, MAPS[m], v, undefined] as [string, MapDef, VehicleId, undefined])),
+    ['Story Mode', STORY_ROAD, 'rig', { ...STORY_TEST_RULES, fuel: false }],
+  ];
+  for (const [name, map, vid, rules] of runs) {
+    it(`a look-ahead bot gets through ${name} in the ${vid} with at most 2 knocks`, () => {
       // Lots of dents so the run goes the full distance; we count the knocks instead.
       const V = { ...VEHICLES[vid], dents: 99 };
+      const id = map.id;
       const phw = (V.width * B.hitboxScale) / 2;
       const phh = (V.length * B.hitboxScale) / 2;
       let coins = 0;
       for (const seed of [1, 2, 3, 4, 5, 6]) {
-        const w = new World(V, seed, MAPS[id].laneCount, MAPS[id].mix);
+        const w = new World(V, seed, map.laneCount, map.mix);
+        if (rules) w.configure(V, map.laneCount, map.mix, rules);
         w.viewAhead = 46;
         w.reset(seed);
         // Seconds until something dents us in each lane (Infinity = clear).
@@ -66,7 +75,7 @@ describe('World', () => {
           let tMin = Infinity;
           const x = laneCenter(lane);
           for (const o of w.obstacles) {
-            if (!o.active || o.hit || o.passed || OBSTACLES[o.kind].effect !== 'dent') continue;
+            if (!o.active || o.hit || o.passed || o.down > 0 || OBSTACLES[o.kind].effect === 'slow') continue;
             if (Math.abs(o.x - x) >= obstacleHalfW(o.kind) + phw) continue;
             const gap = o.y - obstacleHalfH(o.kind) - (w.dist + phh);
             const t = gap <= 0 ? 0 : gap / Math.max(0.1, (1 - o.motion) * w.speed);
@@ -114,5 +123,76 @@ describe('World', () => {
     expect(w.dents).toBe(VEHICLES.auto.dents);
     expect(w.alive).toBe(true);
     expect(w.obstacles.every((o) => !o.active)).toBe(true);
+  });
+
+  describe('Story Mode', () => {
+    const story = (seed: number, rules: RunRules = STORY_TEST_RULES): World => {
+      const w = new World(VEHICLES.rig, seed, STORY_ROAD.laneCount, STORY_ROAD.mix);
+      w.configure(VEHICLES.rig, STORY_ROAD.laneCount, STORY_ROAD.mix, rules);
+      w.reset(seed);
+      return w;
+    };
+
+    it('an empty tank ends the run with the fuel reason', () => {
+      const w = story(3);
+      w.fuel = 1e-6;
+      w.update(STEP);
+      expect(w.alive).toBe(false);
+      expect(w.endReason).toBe('fuel');
+      expect(w.events.crash).toBe(true);
+    });
+
+    it('fuel drains with distance and a full tank lasts the set range', () => {
+      const w = story(4, { ...STORY_TEST_RULES, gun: 0 });
+      w.dents = 999;
+      while (w.alive && w.dist < 500) {
+        w.update(STEP);
+        w.clearEvents();
+      }
+      // Fuel cans may have topped it up, but it must have gone down on the way.
+      expect(w.fuel).toBeLessThan(1);
+    });
+
+    it('ramming zombies wears the bumper before it costs armour', () => {
+      const w = story(5, { ...STORY_TEST_RULES, gun: 0, ram: 1 });
+      const hits = B.ramHits[1]!;
+      for (let n = 1; n <= hits; n++) {
+        const z = w.obstacles.find((o) => !o.active)!;
+        Object.assign(z, { active: true, kind: ObstacleKind.Zombie, x: laneCenter(w.targetLane), y: w.dist + 1, hit: false, passed: false, down: 0, motion: 0 });
+        w.invuln = 0;
+        w.update(STEP);
+        expect(w.events.rams).toBe(1);
+        expect(z.down).toBeGreaterThan(0);
+        expect(w.dents).toBe(n < hits ? VEHICLES.rig.dents : VEHICLES.rig.dents - 1);
+        w.clearEvents();
+      }
+      expect(w.kills).toBe(hits);
+    });
+
+    it('the roof gun knocks down zombies ahead', () => {
+      const w = story(6, { ...STORY_TEST_RULES, fuel: false, gun: 3 });
+      w.dents = 999;
+      let shots = 0;
+      for (let i = 0; i < 60 * 60 && w.alive; i++) {
+        w.update(STEP);
+        if (w.events.shot) shots++;
+        w.clearEvents();
+      }
+      expect(shots).toBeGreaterThan(5);
+      expect(w.kills).toBeGreaterThanOrEqual(shots);
+    });
+
+    it('fuel cans show up on the road', () => {
+      const w = story(7, { ...STORY_TEST_RULES, tank: 1000, gun: 0 });
+      w.dents = 999;
+      let cans = 0;
+      for (let i = 0; i < 60 * 120; i++) {
+        w.update(STEP);
+        w.clearEvents();
+        cans = Math.max(cans, w.coins.filter((c) => c.active && c.fuel).length);
+        if (cans > 0) break;
+      }
+      expect(cans).toBeGreaterThan(0);
+    });
   });
 });

@@ -61,7 +61,7 @@ export interface Lighting {
 
 export type Weather = 'clear' | 'rain' | 'drizzle' | 'snow';
 
-export type MusicTheme = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london';
+export type MusicTheme = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london' | 'zombie';
 
 export interface MapDef {
   id: MapId;

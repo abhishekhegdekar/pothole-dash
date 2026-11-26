@@ -1,4 +1,4 @@
-export type VehicleId = 'auto' | 'scooter' | 'bike' | 'hatch' | 'sportsbike' | 'suv' | 'cab';
+export type VehicleId = 'auto' | 'scooter' | 'bike' | 'hatch' | 'sportsbike' | 'suv' | 'cab' | 'rig';
 
 export interface VehicleDef {
   id: VehicleId;
@@ -70,6 +70,12 @@ export const VEHICLES: Record<VehicleId, VehicleDef> = {
     ...base,
     id: 'cab', name: 'City cab', width: 1.75, length: 4.2, dents: 3, laneChangeTime: 0.13, speedMul: 1.12,
     speedRating: 4, handlingRating: 4, price: 15000, perk: 'Tips: +25% coins.', coinMul: 1.25,
+  },
+  /** Story Mode only: Raj's SUV with a ram bar and a roof gun. Not sold in the Garage. */
+  rig: {
+    ...base,
+    id: 'rig', name: "Raj's SUV", width: 1.95, length: 4.6, dents: 5, laneChangeTime: 0.16, speedMul: 1.0,
+    speedRating: 3, handlingRating: 3, price: 0, perk: 'Ram bar, roof gun and a family to protect.', shrugSmall: true,
   },
 };
 
