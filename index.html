@@ -17,6 +17,7 @@
           <div class="hud-sub"><span id="hudScore">Score 0</span><span id="hudCombo" class="combo" hidden>Combo ×2</span></div>
         </div>
         <div class="hud-right">
+          <div class="hud-coins"><span class="chip-dot chip-coin" aria-hidden="true"></span><span id="hudCoins">0</span></div>
           <div id="hudDents" class="dents" role="img" aria-label="3 of 3 dents left"></div>
           <button id="btnPause" class="icon-btn" type="button" aria-label="Pause">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
@@ -24,6 +25,16 @@
         </div>
       </div>
 
+      <div id="pedals" class="pedals is-hidden">
+        <button id="pedalBrake" class="pedal pedal-brake" type="button" aria-label="Brake (hold)">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 19V5M5 12l7 7 7-7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span>Brake</span>
+        </button>
+        <button id="pedalGas" class="pedal pedal-gas" type="button" aria-label="Accelerate (hold)">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 5v14M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span>Boost</span>
+        </button>
+      </div>
       <div id="speedfx" class="speedfx" aria-hidden="true"></div>
       <div id="flash" class="flash" aria-hidden="true"></div>
       <div id="count" class="count" aria-live="assertive" hidden></div>
@@ -37,7 +48,7 @@
           </div>
         </div>
         <div class="menu-panel">
-          <p class="menu-eyebrow">Mumbai · after dark</p>
+          <p id="menuEyebrow" class="menu-eyebrow">Mumbai · after dark</p>
           <h1 class="menu-title">Pothole<br />Dash</h1>
           <p id="menuBest" class="best"></p>
           <nav class="menu-list" aria-label="Main menu">
@@ -59,7 +70,7 @@
             </button>
           </nav>
           <p id="menuNote" class="menu-note" aria-live="polite"></p>
-          <p class="menu-controls">Swipe or tap left/right · ← → or A/D · P to pause</p>
+          <p class="menu-controls">Swipe or tap to steer · hold Boost or Brake · ← → steer, ↑ ↓ boost and brake</p>
         </div>
       </section>
 
@@ -90,6 +101,19 @@
             <input id="volSfx" class="slider" type="range" min="0" max="100" step="5" value="90" />
           </label>
           <button id="btnSettingsDone" class="btn" type="button">Done</button>
+        </div>
+      </section>
+
+      <section id="maps" class="overlay maps" hidden>
+        <div class="maps-panel">
+          <div class="maps-head">
+            <button id="btnMapsBack" class="icon-btn" type="button" aria-label="Back">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <h2>Pick a city</h2>
+            <span class="chip"><span class="chip-dot chip-coin" aria-hidden="true"></span><span id="mapsCoins">0</span></span>
+          </div>
+          <div id="mapList" class="map-list" role="list"></div>
         </div>
       </section>
 

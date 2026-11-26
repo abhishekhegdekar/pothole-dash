@@ -62,6 +62,7 @@ export function buildAuto(): THREE.Group {
   const plate = mat('#f4e9a6');
   const head = mat('#fff4c8', { emissive: '#ffe9a0', emissiveIntensity: 1 });
   const tail = mat('#e8412c', { emissive: '#b01d10', emissiveIntensity: 0.7 });
+  tail.name = 'tail';
   const amber = mat('#ff9d1c', { emissive: '#c25e00', emissiveIntensity: 0.5 });
 
   // Rear tub: the wide passenger section with a rounded back.

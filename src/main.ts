@@ -2,6 +2,7 @@ import './style.css';
 import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
 import { VEHICLES } from './data/vehicles';
+import { isMapId, MAP_ORDER, MAPS, type MapDef } from './data/maps';
 import { Sfx } from './audio/sfx';
 import { Music } from './audio/music';
 import { Renderer } from './render/renderer';
@@ -82,6 +83,12 @@ function boot(): void {
     speedfx: el('speedfx'),
     volMusic: el<HTMLInputElement>('volMusic'),
     volSfx: el<HTMLInputElement>('volSfx'),
+    maps: el('maps'),
+    mapList: el('mapList'),
+    mapsCoins: el('mapsCoins'),
+    btnMapsBack: el('btnMapsBack'),
+    hudCoins: el('hudCoins'),
+    pedals: el('pedals'),
   };
 
   const store = new SaveStore();
@@ -91,10 +98,11 @@ function boot(): void {
   sfx.setVolumes(save.settings.musicVol, save.settings.sfxVol);
   const music = new Music(sfx);
   const newSeed = (): number => (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
-  const world = new World(VEHICLES.auto, newSeed());
+  let map: MapDef = isMapId(save.selectedMap) ? MAPS[save.selectedMap] : MAPS.mumbai;
+  const world = new World(VEHICLES.auto, newSeed(), map.laneCount, map.mix);
   let renderer: GameRenderer;
   try {
-    renderer = new Renderer3D(canvas, world, save.settings.graphics);
+    renderer = new Renderer3D(canvas, world, save.settings.graphics, map);
   } catch (err) {
     // No WebGL: fall back to the flat 2D view so the game still runs.
     console.warn('3D unavailable, using 2D', err);
@@ -103,6 +111,8 @@ function boot(): void {
     renderer = new Renderer(fresh, world);
   }
   const input = new Input(el<HTMLCanvasElement>('game'));
+  input.bindPedal(el('pedalGas'), 'gas');
+  input.bindPedal(el('pedalBrake'), 'brake');
 
   let state: State = 'menu';
   let overReady = false;
@@ -115,6 +125,9 @@ function boot(): void {
   let countBeat = -1;
   let bannerTimer = 0;
   let shownFx = -1;
+  let shownCoins = -1;
+  let coinStreak = 0;
+  let coinStreakT = 0;
 
   /** Restarts a CSS animation on an element by toggling its class. */
   const replay = (node: HTMLElement, cls: string): void => {
@@ -146,14 +159,17 @@ function boot(): void {
   const renderWallet = (): void => {
     ui.walletCoins.textContent = fmt(save.coins);
     ui.walletPoints.textContent = fmt(save.points);
+    ui.mapsCoins.textContent = fmt(save.coins);
+    el('menuEyebrow').textContent = `${map.name} · ${map.conditions}`;
     ui.best.textContent = save.bestScore > 0 ? `Best score ${fmt(save.bestScore)}` : 'Watch the road. It bites.';
   };
   renderSettings();
   renderWallet();
 
   const show = (which: HTMLElement | null): void => {
-    for (const o of [ui.menu, ui.paused, ui.over, ui.settings]) o.hidden = o !== which;
+    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
+    ui.pedals.classList.toggle('is-hidden', which !== null || state === 'menu' || state === 'over');
   };
 
   const showBeat = (beat: number): void => {
@@ -216,6 +232,8 @@ function boot(): void {
     save.runs++;
     if (isBest) save.bestScore = score;
     save.points += score;
+    save.coins += world.coinCount;
+    save.bestByMap[map.id] = Math.max(save.bestByMap[map.id] ?? 0, score);
     if (d > save.bestDistance) save.bestDistance = d;
     store.save(save);
     ui.overDist.textContent = formatDistance(d);
@@ -225,7 +243,10 @@ function boot(): void {
     ui.overBest.textContent = `Best score: ${save.bestScore.toLocaleString('en-IN')} · Best distance: ${formatDistance(save.bestDistance)}`;
     ui.overBadge.hidden = !isBest;
     ui.overTitle.textContent = isBest ? 'New record!' : 'Auto broke down!';
-    ui.overEarned.textContent = score > 0 ? `+${fmt(score)} points for Story Mode` : '';
+    const earned: string[] = [];
+    if (world.coinCount > 0) earned.push(`+${fmt(world.coinCount)} coins`);
+    if (score > 0) earned.push(`+${fmt(score)} points for Story Mode`);
+    ui.overEarned.textContent = earned.join(' · ');
     renderWallet();
     overTimer = window.setTimeout(() => {
       overReady = true;
@@ -234,8 +255,81 @@ function boot(): void {
     }, 1300);
   };
 
+  // Map select.
+  const useMap = (next: MapDef): void => {
+    if (next.id === map.id) return;
+    map = next;
+    save.selectedMap = map.id;
+    store.save(save);
+    world.configure(VEHICLES.auto, map.laneCount, map.mix);
+    world.reset(newSeed());
+    renderer.setMap?.(map);
+    renderer.resetRun();
+  };
+  const renderMaps = (): void => {
+    ui.mapList.textContent = '';
+    for (const id of MAP_ORDER) {
+      const m = MAPS[id];
+      const owned = save.ownedMaps.includes(id);
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'map-card';
+      card.setAttribute('role', 'listitem');
+      card.style.background = `linear-gradient(135deg, ${m.card[0]}, ${m.card[1]})`;
+      card.classList.toggle('is-selected', id === map.id);
+      card.classList.toggle('is-locked', !owned);
+      const afford = save.coins >= m.price;
+      card.classList.toggle('cant-afford', !owned && !afford);
+      const best = save.bestByMap[id] ?? 0;
+      card.innerHTML = `
+        <span class="mc-cond"></span><span class="mc-name"></span><span class="mc-tag"></span>
+        <span class="mc-foot"><span class="mc-best"></span><span class="mc-go"></span></span>`;
+      card.querySelector('.mc-cond')!.textContent = m.conditions;
+      card.querySelector('.mc-name')!.textContent = m.name;
+      card.querySelector('.mc-tag')!.textContent = m.tagline;
+      card.querySelector('.mc-best')!.textContent = owned ? (best > 0 ? `Best ${fmt(best)}` : `${m.laneCount} lanes`) : `${m.laneCount} lanes`;
+      card.querySelector('.mc-go')!.textContent = owned ? 'Drive' : `Unlock · ${fmt(m.price)} coins`;
+      card.addEventListener('click', () => {
+        if (!owned) {
+          if (!afford) {
+            sfx.thud();
+            return;
+          }
+          save.coins -= m.price;
+          save.ownedMaps.push(id);
+          store.save(save);
+          sfx.ding(3);
+          renderWallet();
+          renderMaps();
+          return;
+        }
+        useMap(m);
+        start();
+      });
+      ui.mapList.appendChild(card);
+    }
+    // Teaser for the next two cities.
+    for (const [name, cond] of [['New York', 'Snow · Neon night'], ['London', 'Drizzle · Fog']] as const) {
+      const card = document.createElement('div');
+      card.className = 'map-card is-soon';
+      card.setAttribute('role', 'listitem');
+      card.style.background = 'linear-gradient(135deg, #2a2d36, #464b58)';
+      card.innerHTML = `<span class="mc-cond"></span><span class="mc-name"></span><span class="mc-tag">Coming in the next update.</span><span class="mc-foot"><span></span><span class="mc-go">Soon</span></span>`;
+      card.querySelector('.mc-cond')!.textContent = cond;
+      card.querySelector('.mc-name')!.textContent = name;
+      ui.mapList.appendChild(card);
+    }
+  };
+  const openMaps = (): void => {
+    sfx.unlock();
+    renderMaps();
+    show(ui.maps);
+    (ui.mapList.querySelector('.is-selected') as HTMLElement | null)?.focus({ preventScroll: true });
+  };
+  ui.btnMapsBack.addEventListener('click', () => show(ui.menu));
+
   // Buttons.
-  ui.btnStart.addEventListener('click', start);
+  ui.btnStart.addEventListener('click', openMaps);
   ui.btnAgain.addEventListener('click', () => overReady && start());
   ui.btnResume.addEventListener('click', resume);
   ui.paused.addEventListener('pointerdown', (e) => {
@@ -331,7 +425,7 @@ function boot(): void {
     } else if (state === 'paused') {
       if (a === Action.Pause || a === Action.Confirm) resume();
     } else if (state === 'menu') {
-      if (a === Action.Confirm && ui.settings.hidden) start();
+      if (a === Action.Confirm && ui.settings.hidden && ui.maps.hidden) openMaps();
     } else if (state === 'over' && overReady && a === Action.Confirm) {
       start();
     }
@@ -339,6 +433,7 @@ function boot(): void {
 
   const update = (dt: number): void => {
     input.drain(onAction);
+    world.throttle = state === 'play' ? input.throttle : 0;
     if (state === 'countdown') {
       countT += dt;
       const beat = Math.min(3, Math.floor(countT / BEAT));
@@ -366,6 +461,18 @@ function boot(): void {
         renderer.popText(`+${ev.nearMissPoints}`, ev.nearMissX, ev.nearMissY, '#f7f2e7', 18);
       }
       if (ev.milestone > 0) milestone(ev.milestone);
+      if (ev.coins > 0) {
+        coinStreak = coinStreakT > 0 ? coinStreak + ev.coins : 0;
+        coinStreakT = 0.6;
+        sfx.coin(coinStreak);
+        replay(ui.hudCoins.parentElement!, 'pop');
+      }
+      coinStreakT -= dt;
+      if (ev.bump) {
+        sfx.bump();
+        renderer.addShake(7);
+        vibrate(25);
+      }
       if (ev.hit) {
         renderer.burst(ev.hitX, ev.hitY);
         renderer.addShake(ev.crash ? 18 : 10);
@@ -394,10 +501,11 @@ function boot(): void {
     music.setMood(
       state === 'menu' ? 'menu' : state === 'over' ? 'over' : 'run',
       Math.min(1, renderer.speedFx * 0.85 + Math.min(world.combo, 6) * 0.04),
+      map.music,
     );
     music.setMuffled(state === 'paused');
     music.update();
-    sfx.setEngine(running || state === 'countdown', renderer.speedFx);
+    sfx.setEngine(running || state === 'countdown', Math.min(1, renderer.speedFx + (world.throttleMul - 1) * 0.8));
     const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
     renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? 'menu' : 'game');
     const fx = Math.round(renderer.speedFx * 100) / 100;
@@ -409,6 +517,10 @@ function boot(): void {
     if (state !== 'menu' && state !== 'over' && meters !== shownMeters) {
       shownMeters = meters;
       ui.dist.textContent = formatDistance(world.dist);
+    }
+    if (world.coinCount !== shownCoins) {
+      shownCoins = world.coinCount;
+      ui.hudCoins.textContent = fmt(shownCoins);
     }
     if (state !== 'menu' && state !== 'over' && world.score !== shownScore) {
       shownScore = world.score;

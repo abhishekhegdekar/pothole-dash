@@ -207,3 +207,40 @@ h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 28px; 
 .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: var(--chalk); border: 3px solid var(--saffron); }
 .slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--chalk); border: 3px solid var(--saffron); }
 .slider:focus-visible { outline: 2px solid var(--saffron); outline-offset: 2px; border-radius: 4px; }
+
+/* HUD coins */
+.hud-coins { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(21, 22, 26, 0.55); font-weight: 800; font-variant-numeric: tabular-nums; font-size: 15px; }
+.hud-coins.pop { animation: coinpop 0.25s ease-out; }
+@keyframes coinpop { 0% { transform: scale(1.25); } 100% { transform: scale(1); } }
+
+/* Map select */
+.maps { align-items: stretch; justify-content: center; padding: 0; background: rgba(12, 13, 16, 0.72); backdrop-filter: blur(4px); }
+.maps-panel { width: min(100%, 980px); display: flex; flex-direction: column; gap: 14px; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); overflow-y: auto; touch-action: pan-y; }
+.maps-head { display: flex; align-items: center; gap: 12px; }
+.maps-head h2 { margin: 0; flex: 1; font-family: var(--display); font-size: 24px; }
+.map-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.map-card { position: relative; display: flex; flex-direction: column; gap: 6px; min-height: 168px; padding: 16px; border-radius: 16px; border: 2px solid transparent; color: var(--chalk); text-align: left; cursor: pointer; overflow: hidden; font: inherit; }
+.map-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, rgba(0, 0, 0, 0.55)); pointer-events: none; }
+.map-card > * { position: relative; z-index: 1; }
+.map-card:focus-visible { outline: none; border-color: var(--saffron); }
+.map-card.is-selected { border-color: var(--saffron); }
+.map-card .mc-cond { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 800; color: rgba(255, 255, 255, 0.85); }
+.map-card .mc-name { font-family: var(--display); font-size: 30px; line-height: 1; }
+.map-card .mc-tag { font-size: 14px; color: rgba(255, 255, 255, 0.9); }
+.map-card .mc-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; }
+.map-card .mc-go { padding: 8px 14px; border-radius: 999px; background: var(--saffron); color: var(--ink); font-weight: 900; }
+.map-card.is-locked .mc-go { background: rgba(255, 255, 255, 0.92); }
+.map-card.is-locked.cant-afford { cursor: not-allowed; }
+.map-card.is-locked.cant-afford .mc-go { background: rgba(255, 255, 255, 0.35); color: var(--chalk); }
+.map-card.is-soon { cursor: default; filter: saturate(0.4); }
+.map-card.is-soon .mc-go { background: rgba(255, 255, 255, 0.2); color: var(--chalk); }
+
+/* Brake and boost pedals (touch screens) */
+.pedals { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; padding: 0 max(14px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 14px) max(14px, env(safe-area-inset-left, 0px)); pointer-events: none; transition: opacity 0.2s; }
+.pedals.is-hidden { opacity: 0; }
+.pedals.is-hidden .pedal { pointer-events: none; }
+.pedal { pointer-events: auto; touch-action: none; width: 74px; height: 74px; border-radius: 22px; border: 2px solid rgba(255, 255, 255, 0.22); background: rgba(21, 22, 26, 0.5); color: var(--chalk); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 800 11px/1 var(--body); letter-spacing: 0.06em; text-transform: uppercase; backdrop-filter: blur(3px); -webkit-user-select: none; user-select: none; }
+.pedal.is-held { transform: scale(0.94); }
+.pedal-brake.is-held { background: rgba(229, 67, 47, 0.85); border-color: #ff8a78; }
+.pedal-gas.is-held { background: rgba(255, 194, 26, 0.9); color: var(--ink); border-color: #ffe08a; }
+@media (hover: hover) and (pointer: fine) { .pedal { width: 64px; height: 64px; opacity: 0.75; } }
