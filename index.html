@@ -67,7 +67,7 @@
         <div class="card card-small settings">
           <h2>Settings</h2>
           <div class="setting">
-            <span>Sound effects</span>
+            <span>Sound</span>
             <button id="btnMute" class="toggle" type="button" aria-pressed="true">On</button>
           </div>
           <div class="setting">
@@ -81,10 +81,14 @@
               <button id="btnGfxLow" type="button" aria-pressed="false">Low</button>
             </div>
           </div>
-          <div class="setting is-muted">
+          <label class="setting">
             <span>Music</span>
-            <span class="soon">Coming in step 2</span>
-          </div>
+            <input id="volMusic" class="slider" type="range" min="0" max="100" step="5" value="70" />
+          </label>
+          <label class="setting">
+            <span>Effects</span>
+            <input id="volSfx" class="slider" type="range" min="0" max="100" step="5" value="90" />
+          </label>
           <button id="btnSettingsDone" class="btn" type="button">Done</button>
         </div>
       </section>

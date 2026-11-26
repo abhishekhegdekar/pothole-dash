@@ -106,6 +106,7 @@ export class Renderer3D implements GameRenderer {
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 90;
     this.sun.shadow.bias = -0.0008;
+    this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
 
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshLambertMaterial({ color: style.ground }));
@@ -344,9 +345,10 @@ export class Renderer3D implements GameRenderer {
     const halfH = Math.tan((c.fov * Math.PI) / 360);
     const needW = menu ? 17 : 13.5;
     let dist = needW / 2 / (halfH * c.aspect);
-    dist = Math.max(menu ? 22 : 19, Math.min(menu ? 40 : 44, dist));
+    const wide = c.aspect > 1;
+    dist = Math.max(menu ? 22 : wide ? 24 : 19, Math.min(menu ? 40 : 44, dist));
     const lookX = menu ? 0 : px * 0.3;
-    const lookZ = -cam - (menu ? 16 : 7);
+    const lookZ = -cam - (menu ? 16 : wide ? 4 : 7);
     c.position.set(lookX + Math.sin(yaw) * Math.cos(elev) * dist, Math.sin(elev) * dist, lookZ + Math.cos(yaw) * Math.cos(elev) * dist);
     if (this.shake > 0) {
       c.position.x += (Math.random() - 0.5) * this.shake * 0.03;
