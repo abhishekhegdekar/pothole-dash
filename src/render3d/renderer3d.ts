@@ -99,6 +99,7 @@ export class Renderer3D implements GameRenderer {
   private readonly shapes: PotholeShape[][];
   private auto: THREE.Group;
   private vehicleId: VehicleId = 'auto';
+  private vehiclePaint: string | undefined;
   private readonly pX = new Float32Array(PARTICLES);
   private readonly pY = new Float32Array(PARTICLES);
   private readonly pH = new Float32Array(PARTICLES);
@@ -312,13 +313,13 @@ export class Renderer3D implements GameRenderer {
   }
 
   /** Builds the player's vehicle: the detailed auto, or a merged low-poly model with brake lights. */
-  private buildVehicle(id: VehicleId): THREE.Group {
+  private buildVehicle(id: VehicleId, paint?: string): THREE.Group {
     let g: THREE.Group;
     if (id === 'auto') {
       g = buildAuto();
     } else {
       g = new THREE.Group();
-      const body = new THREE.Mesh(playerVehicleGeo(id), this.propMat);
+      const body = new THREE.Mesh(playerVehicleGeo(id, paint), this.propMat);
       body.castShadow = true;
       g.add(body);
       const def = VEHICLES[id];
@@ -340,10 +341,11 @@ export class Renderer3D implements GameRenderer {
   }
 
   /** Swaps the player's vehicle model. */
-  setVehicle(id: VehicleId): void {
-    if (id === this.vehicleId) return;
+  setVehicle(id: VehicleId, paint?: string): void {
+    if (id === this.vehicleId && paint === this.vehiclePaint) return;
     const old = this.vehicleId;
     this.vehicleId = id;
+    this.vehiclePaint = paint;
     this.scene.remove(this.auto);
     if (old !== 'auto') {
       this.auto.traverse((o) => {
@@ -351,7 +353,7 @@ export class Renderer3D implements GameRenderer {
         if (mesh.isMesh) mesh.geometry.dispose();
       });
     }
-    this.auto = this.buildVehicle(id);
+    this.auto = this.buildVehicle(id, paint);
     this.scene.add(this.auto);
   }
 

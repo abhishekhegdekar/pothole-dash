@@ -44,6 +44,10 @@ export interface RunRules {
   gun: number;
   /** Extra tank size, 1 = standard. */
   tank: number;
+  /** Braking speed factor relative to the normal brake (lower brakes harder). */
+  brake?: number;
+  /** Extra pickup reach for scrap and fuel cans, metres. */
+  magnet?: number;
 }
 
 export const FREE_RULES: RunRules = { fuel: false, ram: 0, gun: 0, tank: 1 };
@@ -255,7 +259,7 @@ export class World {
     this.t += dt;
     if (this.speedMul < 1) this.speedMul = Math.min(1, this.speedMul + ((1 - B.hitSlowdown) * dt) / B.hitRecoverTime);
     const base = speedAt(this.t) * this.vehicle.speedMul;
-    const want = this.throttle > 0 ? B.boostMul : this.throttle < 0 ? B.brakeMul : 1;
+    const want = this.throttle > 0 ? B.boostMul : this.throttle < 0 ? B.brakeMul * (this.rules.brake ?? 1) : 1;
     const dm = B.throttleRate * dt;
     this.throttleMul += Math.max(-dm * 1.6, Math.min(dm, want - this.throttleMul));
     this.speed = base * this.speedMul * this.throttleMul;
@@ -330,7 +334,8 @@ export class World {
         c.active = false;
         continue;
       }
-      if (boxesOverlap(px, this.dist, phw + 0.15, phh, c.x, c.y, COIN_R, COIN_R)) {
+      const reach = this.rules.magnet ?? 0;
+      if (boxesOverlap(px, this.dist, phw + 0.15 + reach, phh + reach * 0.5, c.x, c.y, COIN_R, COIN_R)) {
         c.active = false;
         if (c.fuel) {
           this.fuel = Math.min(1, this.fuel + B.fuelCan / this.rules.tank);
@@ -424,7 +429,7 @@ export class World {
     this.events.rams += n;
     this.events.ramX = o.x;
     this.events.ramY = o.y;
-    this.ramWear += n / (B.ramHits[Math.min(3, this.rules.ram)] ?? 3);
+    this.ramWear += n / (B.ramHits[Math.min(4, this.rules.ram)] ?? 3);
     if (this.ramWear >= 1 && this.invuln <= 0) {
       this.ramWear -= 1;
       this.dent(px);

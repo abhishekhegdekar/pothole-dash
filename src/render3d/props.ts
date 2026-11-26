@@ -491,7 +491,7 @@ function shade(hex: string, k: number): string {
 }
 
 /** Player vehicles other than the auto, as one geometry each (nose to -z, wheels on y = 0). */
-export function playerVehicleGeo(id: string): THREE.BufferGeometry {
+export function playerVehicleGeo(id: string, paint?: string): THREE.BufferGeometry {
   const b = new GeoBuilder();
   switch (id) {
     case 'scooter': {
@@ -540,7 +540,7 @@ export function playerVehicleGeo(id: string): THREE.BufferGeometry {
       break;
     case 'rig': {
       // Raj's SUV: dark olive, mesh over the windows, ram bar, roof gun and spare cans.
-      const body = '#5f6a4c';
+      const body = paint ?? '#5f6a4c';
       shapedCar(b, 0, 0, { style: 'suv', len: 4.6, body });
       // Wire mesh over the side windows.
       for (const s2 of [-1, 1]) for (const zz of [-0.7, -0.2, 0.3, 0.8, 1.3]) b.box(0.03, 0.56, 0.03, s2 * 0.91, 1.5, zz, '#1e1e20');

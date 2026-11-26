@@ -21,7 +21,7 @@ export interface GameRenderer {
   /** Roof gun shot at a world position (Story Mode). */
   shot?(x: number, y: number): void;
   /** Swaps the player's vehicle model. */
-  setVehicle?(id: VehicleId): void;
+  setVehicle?(id: VehicleId, paint?: string): void;
 }
 
 export type ViewMode = 'menu' | 'game' | 'garage';

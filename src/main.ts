@@ -1,7 +1,8 @@
 import './style.css';
 import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
-import { STORY_ROAD, STORY_TEST_RULES } from './data/story';
+import { STORY_ROAD } from './data/story';
+import { MACHETE, PAINTS, UPGRADES, lvl, paintColour, storyRules, storyVehicle } from './data/upgrades';
 import { FootWorld } from './systems/foot';
 import { FootControls } from './core/footControls';
 import { Foot3D } from './render3d/foot3d';
@@ -202,7 +203,7 @@ function boot(): void {
   renderWallet();
 
   const show = (which: HTMLElement | null): void => {
-    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage, ui.storyPick]) o.hidden = o !== which;
+    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage, ui.storyPick, el('workshop')]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
     ui.pedals.classList.toggle('is-hidden', mode === 'foot' || which !== null || state === 'menu' || state === 'over');
     ui.footPad.hidden = mode !== 'foot' || which !== null || state === 'menu' || state === 'over';
@@ -233,7 +234,7 @@ function boot(): void {
     renderer.resetRun();
     if (mode === 'foot') {
       foot.reset(newSeed());
-      foot.weapon = save.scrap >= 40 ? 'machete' : 'bat';
+      foot.weapon = save.weapons.includes('machete') ? 'machete' : 'bat';
       footIn.reset();
       foot3d?.hidePopups();
     }
@@ -346,10 +347,10 @@ function boot(): void {
     // The road behind the on-foot view stays the Story road, so the menu looks right after.
     if (wasFree !== !story) {
       road = story ? STORY_ROAD : map;
-      const v = story ? VEHICLES.rig : vehicle;
-      world.configure(v, road.laneCount, road.mix, story ? STORY_TEST_RULES : undefined);
+      const v = story ? storyVehicle(save.upgrades) : vehicle;
+      world.configure(v, road.laneCount, road.mix, story ? storyRules(save.upgrades) : undefined);
       world.reset(newSeed());
-      renderer.setVehicle?.(v.id);
+      renderer.setVehicle?.(v.id, story ? paintColour(save.paint) : undefined);
       renderer.setMap?.(road);
       renderer.resetRun();
       buildDents();
@@ -459,6 +460,104 @@ function boot(): void {
   }
   ui.btnGfxHigh.addEventListener('click', () => setGfx('high'));
   ui.btnGfxLow.addEventListener('click', () => setGfx('low'));
+  // Tanvi's workshop: SUV upgrades, paint and the machete.
+  const shop = el('workshop');
+  const shopList = el('shopList');
+  const renderWorkshop = (): void => {
+    el('shopPoints').textContent = fmt(save.points);
+    el('shopScrap').textContent = fmt(save.scrap);
+    shopList.textContent = '';
+    const row = (name: string, detail: string, pips: number | null, cost: { points: number; scrap: number } | null, owned: string, buy: () => void): void => {
+      const r = document.createElement('div');
+      r.className = 'shop-row';
+      const can = cost !== null && save.points >= cost.points && save.scrap >= cost.scrap;
+      r.innerHTML = `<div class="sr-text"><span class="sr-name"></span><span class="sr-detail"></span></div><span class="sr-pips"></span><button type="button" class="sr-buy"></button>`;
+      r.querySelector('.sr-name')!.textContent = name;
+      r.querySelector('.sr-detail')!.textContent = detail;
+      const pipsEl = r.querySelector('.sr-pips')!;
+      if (pips !== null) for (let i = 0; i < 3; i++) {
+        const p = document.createElement('i');
+        if (i < pips) p.className = 'on';
+        pipsEl.appendChild(p);
+      }
+      const btn = r.querySelector('.sr-buy') as HTMLButtonElement;
+      if (cost === null) {
+        btn.textContent = owned;
+        btn.disabled = true;
+      } else {
+        btn.innerHTML = `<span>${fmt(cost.points)} pts</span>${cost.scrap > 0 ? `<span>${fmt(cost.scrap)} scrap</span>` : ''}`;
+        btn.classList.toggle('cant', !can);
+        btn.addEventListener('click', () => {
+          if (!can) {
+            sfx.thud();
+            return;
+          }
+          save.points -= cost.points;
+          save.scrap -= cost.scrap;
+          buy();
+          store.save(save);
+          sfx.ding(3);
+          renderWorkshop();
+        });
+      }
+      shopList.appendChild(r);
+    };
+    for (const u of UPGRADES) {
+      const level = lvl(save.upgrades, u.id);
+      const next = level < 3 ? { points: u.points[level]!, scrap: u.scrap[level]! } : null;
+      row(u.name, level < 3 ? `Next: ${u.levels[level]}` : u.levels[2], level, next, 'Maxed', () => {
+        save.upgrades[u.id] = level + 1;
+      });
+    }
+    const hasMachete = save.weapons.includes('machete');
+    row('Machete', 'On foot: hits twice as hard as the bat', null, hasMachete ? null : MACHETE, 'Owned', () => {
+      save.weapons.push('machete');
+    });
+    // Paint swatches.
+    const paints = el('shopPaints');
+    paints.textContent = '';
+    for (const p of PAINTS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.style.background = p.colour;
+      b.title = p.price > 0 && !save.weapons.includes(`paint:${p.id}`) ? `${p.name} · ${fmt(p.price)} pts` : p.name;
+      b.setAttribute('aria-label', b.title);
+      b.setAttribute('aria-pressed', String(save.paint === p.id));
+      b.classList.toggle('locked', p.price > 0 && !save.weapons.includes(`paint:${p.id}`));
+      b.addEventListener('click', () => {
+        const owned = p.price === 0 || save.weapons.includes(`paint:${p.id}`);
+        if (!owned) {
+          if (save.points < p.price) {
+            sfx.thud();
+            return;
+          }
+          save.points -= p.price;
+          save.weapons.push(`paint:${p.id}`);
+          sfx.ding(2);
+        }
+        save.paint = p.id;
+        store.save(save);
+        renderer.setVehicle?.('rig', paintColour(save.paint));
+        renderWorkshop();
+      });
+      paints.appendChild(b);
+    }
+    el('shopPaintName').textContent = `${PAINTS.find((p) => p.id === save.paint)?.name ?? ''} · dashed colours cost points`;
+  };
+  function openWorkshop(): void {
+    sfx.unlock();
+    setMode('story');
+    renderer.setVehicle?.('rig', paintColour(save.paint));
+    garageOpen = true;
+    renderWorkshop();
+    show(shop);
+  }
+  el('btnShopBack').addEventListener('click', () => {
+    garageOpen = false;
+    show(ui.storyPick);
+  });
+
   ui.btnStory.addEventListener('click', () => {
     sfx.unlock();
     show(ui.storyPick);
@@ -466,8 +565,11 @@ function boot(): void {
   el('btnStoryBack').addEventListener('click', () => show(ui.menu));
   el('btnStoryRoad').addEventListener('click', () => {
     setMode('story');
+    world.configure(storyVehicle(save.upgrades), road.laneCount, road.mix, storyRules(save.upgrades));
+    buildDents();
     start();
   });
+  el('btnStoryShop').addEventListener('click', openWorkshop);
   el('btnStoryFoot').addEventListener('click', () => {
     if (!foot3d) {
       show(ui.menu);
@@ -617,6 +719,8 @@ function boot(): void {
         else if (a === Action.Right) step(1);
         else if (a === Action.Confirm) ui.btnVehAction.click();
         else if (a === Action.Pause) closeGarage();
+      } else if (!el('workshop').hidden) {
+        if (a === Action.Pause) el('btnShopBack').click();
       } else if (!ui.storyPick.hidden) {
         if (a === Action.Pause) show(ui.menu);
       } else if (a === Action.Confirm && ui.settings.hidden && ui.maps.hidden) openMaps();
