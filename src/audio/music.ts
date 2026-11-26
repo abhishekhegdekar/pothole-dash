@@ -195,8 +195,58 @@ const BANGALORE: Theme = {
   }),
 };
 
-export type RunTheme = 'mumbai' | 'thane' | 'bangalore';
-const RUN_THEMES: Record<RunTheme, Theme> = { mumbai: RUN, thane: THANE, bangalore: BANGALORE };
+/** New York: slow funk in E, snare backbeat, plucked clav-like riff. */
+const NEWYORK: Theme = {
+  bpm: 100,
+  bars: 8,
+  chords: [[55, 59, 64], [57, 61, 64], [55, 59, 64], [57, 61, 64], [55, 60, 64], [57, 62, 66], [55, 59, 64], [54, 59, 63]],
+  bassRoots: ['E2', 'A1', 'E2', 'A1', 'C2', 'D2', 'E2', 'B1'].map(midiOf),
+  bassPattern: 'R . . R . 5 . R O . R . . 5 R .',
+  lead: parseBars([
+    'E5 . G5 . A5 . G5 E5 . . D5 . E5 . . .',
+    'C#5 . E5 . . A4 . B4 . C#5 . E5 . . . .',
+    'E5 . G5 . A5 . B5 . A5 . G5 . E5 . D5 .',
+    'E5 - - - . . . . . . B4 . D5 . E5 .',
+    'G5 . G5 . E5 . G5 A5 . . G5 . E5 . . .',
+    'E5 . . C#5 . E5 . . A4 . . . . . . .',
+    'C5 . E5 . G5 . E5 . D5 . F#5 . A5 . F#5 .',
+    'E5 - - - - - - - . . . . . . . .',
+  ]),
+  leadVoice: 'pluck',
+  drums: 'K . . . S . . K . . K . S . . .',
+  hats: 'x . x . x . x . x . x . x . x .',
+  perc: '. s . s . s . s . s . s . s . s',
+  drone: null,
+  levels: (i) => ({ drone: 0, pad: 0.5, bass: 1, drums: 0.85 + 0.15 * i, hats: 0.4 + 0.4 * i, perc: ramp(i, 0.4, 0.8), lead: 0.8, lead2: ramp(i, 0.6, 0.95) }),
+};
+
+/** London: bright indie rock in D, driving eighths and a jangly riff. */
+const LONDON: Theme = {
+  bpm: 128,
+  bars: 8,
+  chords: [[57, 62, 66], [57, 61, 64], [59, 62, 66], [55, 59, 62], [57, 62, 66], [57, 61, 64], [59, 62, 66], [55, 59, 62]],
+  bassRoots: ['D2', 'A1', 'B1', 'G1', 'D2', 'A1', 'B1', 'G1'].map(midiOf),
+  bassPattern: 'R . R . R . R . R . R . R . R .',
+  lead: parseBars([
+    'D5 . A4 . F#5 . A4 . D5 . A4 . F#5 . A4 .',
+    'C#5 . A4 . E5 . A4 . C#5 . A4 . E5 . A4 .',
+    'B4 . F#4 . D5 . F#4 . B4 . F#4 . D5 . F#4 .',
+    'B4 . G4 . D5 . G4 . B4 . G4 . D5 . E5 .',
+    'F#5 - - - E5 - D5 - . . A4 - D5 - E5 -',
+    'E5 - - - C#5 - A4 - . . . . . . . .',
+    'D5 - - - F#5 - - - B4 - - - D5 - C#5 -',
+    'B4 - - - - - - - D5 - E5 - F#5 - A5 -',
+  ]),
+  leadVoice: 'pluck',
+  drums: 'K . . . S . . . K . K . S . . .',
+  hats: 'x . x . x . x . x . x . x . x .',
+  perc: '. . . . . . . . . . . . . . s s',
+  drone: null,
+  levels: (i) => ({ drone: 0, pad: 0.55, bass: 0.9, drums: 0.8 + 0.2 * i, hats: 0.5 + 0.4 * i, perc: ramp(i, 0.3, 0.7), lead: 0.8, lead2: ramp(i, 0.55, 0.9) }),
+};
+
+export type RunTheme = 'mumbai' | 'thane' | 'bangalore' | 'newyork' | 'london';
+const RUN_THEMES: Record<RunTheme, Theme> = { mumbai: RUN, thane: THANE, bangalore: BANGALORE, newyork: NEWYORK, london: LONDON };
 
 const LOOKAHEAD = 0.25;
 
@@ -401,6 +451,7 @@ export class Music {
     else if (d === 'G') this.ge(L('drums'), tt);
     else if (d === 'n') this.na(L('drums'), tt);
     else if (d === 'K') this.kick(L('drums'), t);
+    else if (d === 'S') this.snare(L('drums'), tt);
 
     if (th.hats.split(' ')[s] === 'x') this.hat(L('hats'), tt, 0.09);
     const p = th.perc.split(' ')[s];
@@ -650,6 +701,23 @@ export class Music {
     const o = this.osc('sine', 160, t, t + 0.4);
     o.frequency.exponentialRampToValueAtTime(44, t + 0.12);
     o.connect(g);
+  }
+
+  private snare(out: AudioNode, t: number): void {
+    const c = this.ctx!;
+    const g = c.createGain();
+    g.connect(out);
+    this.env(g, t, 0.3, 0.002, 0.01, 0.12);
+    this.osc('triangle', 190, t, t + 0.15).connect(g);
+    const n = this.noiseSrc(t, 0.2);
+    if (n) {
+      const bp = c.createBiquadFilter();
+      bp.type = 'highpass';
+      bp.frequency.value = 1500;
+      const ng = c.createGain();
+      this.env(ng, t, 0.45, 0.001, 0.01, 0.16);
+      n.connect(bp).connect(ng).connect(out);
+    }
   }
 
   private sitar(out: AudioNode, f0: number, t: number, vol = 0.09): void {

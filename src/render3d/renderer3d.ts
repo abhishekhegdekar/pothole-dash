@@ -3,12 +3,13 @@ import { BALANCE as B } from '../data/balance';
 import { laneCenter } from '../systems/collision';
 import type { World } from '../systems/world';
 import type { GraphicsQuality } from '../storage/save';
-import type { GameRenderer } from '../render/types';
+import type { GameRenderer, ViewMode } from '../render/types';
 import { MAPS, type MapDef } from '../data/maps';
 import { ObstacleKind } from '../data/obstacles';
 import { buildBlock, CHUNK_M, poolTexture, roadTexture, type BlockGeometry } from './city';
 import { buildAuto, type PotholeShape } from './models';
-import { buildObstacleGeos } from './props';
+import { buildObstacleGeos, playerVehicleGeo } from './props';
+import { VEHICLES, type VehicleId } from '../data/vehicles';
 import { createSignAtlas, type SignAtlas } from './signs';
 import { Ambient } from './ambient';
 
@@ -16,6 +17,7 @@ const BLOCK_VARIANTS = 6;
 const CHUNK_POOL = 8;
 const PARTICLES = 90;
 const RAIN_MAX = 700;
+const SNOW_MAX = 520;
 const POPUPS = 8;
 /** The 3D camera sees further up the road than the 2D view, so rows are spawned further ahead. */
 const VIEW_AHEAD = 46;
@@ -75,6 +77,9 @@ export class Renderer3D implements GameRenderer {
   private readonly rain: THREE.LineSegments;
   private readonly rainPos: Float32Array;
   private rainCount = 0;
+  private readonly snow: THREE.Points;
+  private readonly snowPos: Float32Array;
+  private readonly snowPhase = new Float32Array(SNOW_MAX);
   private map: MapDef = MAPS.mumbai;
   private readonly atlas: SignAtlas;
   private readonly ambient: Ambient;
@@ -86,7 +91,8 @@ export class Renderer3D implements GameRenderer {
   private roadW = 9;
   private readonly potholes: PotholeMesh[] = [];
   private readonly shapes: PotholeShape[][];
-  private readonly auto: THREE.Group;
+  private auto: THREE.Group;
+  private vehicleId: VehicleId = 'auto';
   private readonly pX = new Float32Array(PARTICLES);
   private readonly pY = new Float32Array(PARTICLES);
   private readonly pH = new Float32Array(PARTICLES);
@@ -232,14 +238,30 @@ export class Renderer3D implements GameRenderer {
     this.rain.frustumCulled = false;
     this.scene.add(this.rain);
 
+    // Snow: round soft points.
+    this.snowPos = new Float32Array(SNOW_MAX * 3);
+    const snowGeo = new THREE.BufferGeometry();
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(this.snowPos, 3));
+    const flake = document.createElement('canvas');
+    flake.width = flake.height = 32;
+    const fctx = flake.getContext('2d')!;
+    const fg = fctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    fg.addColorStop(0, 'rgba(255,255,255,1)');
+    fg.addColorStop(0.5, 'rgba(255,255,255,0.7)');
+    fg.addColorStop(1, 'rgba(255,255,255,0)');
+    fctx.fillStyle = fg;
+    fctx.fillRect(0, 0, 32, 32);
+    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({
+      size: 0.32, map: new THREE.CanvasTexture(flake), transparent: true, depthWrite: false, color: '#f4f6ff',
+    }));
+    this.snow.frustumCulled = false;
+    this.snow.visible = false;
+    this.scene.add(this.snow);
+
     this.headlight = new THREE.SpotLight('#fff1c8', 0, 34, 0.55, 0.65, 1.1);
     this.scene.add(this.headlight, this.headlight.target);
 
-    this.auto = buildAuto();
-    this.auto.traverse((o) => {
-      const m = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
-      if (m && m.name === 'tail') this.tailMat = m;
-    });
+    this.auto = this.buildVehicle('auto');
     this.scene.add(this.auto);
     this.setMap(map);
 
@@ -264,6 +286,50 @@ export class Renderer3D implements GameRenderer {
     this.setQuality(quality);
   }
 
+  /** Builds the player's vehicle: the detailed auto, or a merged low-poly model with brake lights. */
+  private buildVehicle(id: VehicleId): THREE.Group {
+    let g: THREE.Group;
+    if (id === 'auto') {
+      g = buildAuto();
+    } else {
+      g = new THREE.Group();
+      const body = new THREE.Mesh(playerVehicleGeo(id), this.propMat);
+      body.castShadow = true;
+      g.add(body);
+      const def = VEHICLES[id];
+      const tail = new THREE.MeshLambertMaterial({ color: '#7a1410', emissive: '#ff2a1a', emissiveIntensity: 0.7, name: 'tail' });
+      const two = def.width > 1.2;
+      const lampGeo = new THREE.BoxGeometry(two ? 0.3 : 0.16, 0.1, 0.04);
+      for (const x of two ? [-def.width / 2 + 0.25, def.width / 2 - 0.25] : [0]) {
+        const lamp = new THREE.Mesh(lampGeo, tail);
+        lamp.position.set(x, two ? 0.78 : 0.9, def.length / 2 + 0.02);
+        g.add(lamp);
+      }
+    }
+    this.tailMat = null;
+    g.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+      if (m && m.name === 'tail') this.tailMat = m;
+    });
+    return g;
+  }
+
+  /** Swaps the player's vehicle model. */
+  setVehicle(id: VehicleId): void {
+    if (id === this.vehicleId) return;
+    const old = this.vehicleId;
+    this.vehicleId = id;
+    this.scene.remove(this.auto);
+    if (old !== 'auto') {
+      this.auto.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) mesh.geometry.dispose();
+      });
+    }
+    this.auto = this.buildVehicle(id);
+    this.scene.add(this.auto);
+  }
+
   /** Rebuilds the street, lighting and weather for a map. Takes a moment, so call it between runs. */
   setMap(map: MapDef): void {
     this.map = map;
@@ -282,12 +348,12 @@ export class Renderer3D implements GameRenderer {
     this.blockGeos = [];
     this.roadMats = [];
     const seedBase = map.id.length * 131;
-    for (let i = 0; i < BLOCK_VARIANTS; i++) this.blockGeos.push(buildBlock(map.style, 1000 + i * 77 + seedBase, this.roadW, this.atlas.cells));
+    for (let i = 0; i < BLOCK_VARIANTS; i++) this.blockGeos.push(buildBlock(map.style, 1000 + i * 77 + seedBase, this.roadW, this.atlas.cells[map.style.signs]));
     this.obstacleGeos = buildObstacleGeos(this.roadW);
     const aniso = this.gl.capabilities.getMaxAnisotropy();
-    const wet = map.weather === 'rain' ? '#a3a9b8' : map.weather === 'drizzle' ? '#c4c6cc' : '#ffffff';
+    const wet = map.weather === 'rain' ? '#a3a9b8' : map.weather === 'drizzle' ? '#c4c6cc' : map.weather === 'snow' ? '#d6d9e0' : '#ffffff';
     for (let i = 0; i < 4; i++) {
-      const tex = new THREE.CanvasTexture(roadTexture(this.world.laneCount, this.roadW, i === 3, 50 + i));
+      const tex = new THREE.CanvasTexture(roadTexture(this.world.laneCount, this.roadW, i === 3, 50 + i, map.style.busLane));
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = Math.min(8, aniso);
       this.roadMats.push(new THREE.MeshLambertMaterial({ map: tex, color: wet }));
@@ -322,6 +388,8 @@ export class Renderer3D implements GameRenderer {
     this.rain.visible = this.rainCount > 0;
     this.rain.geometry.setDrawRange(0, this.rainCount * 2);
     for (let i = 0; i < this.rainCount; i++) this.resetDrop(i, Math.random() * 18);
+    this.snow.visible = map.weather === 'snow';
+    if (this.snow.visible) for (let i = 0; i < SNOW_MAX; i++) this.resetFlake(i, Math.random() * 16);
   }
 
   private resetDrop(i: number, y: number): void {
@@ -336,7 +404,31 @@ export class Renderer3D implements GameRenderer {
     p[i * 6 + 5] = z - 0.1;
   }
 
+  private resetFlake(i: number, y: number): void {
+    const p = this.snowPos;
+    p[i * 3] = (Math.random() - 0.5) * 34;
+    p[i * 3 + 1] = y;
+    p[i * 3 + 2] = (Math.random() - 0.5) * 54;
+    this.snowPhase[i] = Math.random() * 6.28;
+  }
+
+  /** Snow drifts down slowly and sways; it is drawn as soft round points. */
+  private updateSnow(dt: number, cx: number, cz: number): void {
+    if (!this.snow.visible) return;
+    const p = this.snowPos;
+    for (let i = 0; i < SNOW_MAX; i++) {
+      const ph = this.snowPhase[i]!;
+      p[i * 3] = p[i * 3]! + Math.sin(this.time * 1.3 + ph) * 0.6 * dt - 0.4 * dt;
+      p[i * 3 + 1] = p[i * 3 + 1]! - (1.3 + (ph % 1)) * dt;
+      p[i * 3 + 2] = p[i * 3 + 2]! + Math.cos(this.time * 0.9 + ph) * 0.3 * dt;
+      if (p[i * 3 + 1]! < 0) this.resetFlake(i, 14 + Math.random() * 3);
+    }
+    this.snow.position.set(cx, 0, cz);
+    this.snow.geometry.attributes.position!.needsUpdate = true;
+  }
+
   private updateRain(dt: number, cx: number, cz: number): void {
+    this.updateSnow(dt, cx, cz);
     if (this.rainCount === 0) return;
     const p = this.rainPos;
     const fall = (this.map.weather === 'rain' ? 24 : 16) * dt;
@@ -439,7 +531,7 @@ export class Renderer3D implements GameRenderer {
     this.pKind[i] = kind;
   }
 
-  draw(alpha: number, frameDt: number, running: boolean, mode: 'menu' | 'game' = 'game'): void {
+  draw(alpha: number, frameDt: number, running: boolean, mode: ViewMode = 'game'): void {
     const { world } = this;
     this.time += frameDt;
     this.windTime.value = this.time;
@@ -451,6 +543,14 @@ export class Renderer3D implements GameRenderer {
     this.speedFx += (speedK - this.speedFx) * Math.min(1, frameDt * 3);
 
     this.placeChunks(cam);
+    // The garage is a clean showroom on the road: the buildings step away so the orbiting camera never clips them.
+    const street = mode !== 'garage';
+    if (this.chunks[0]!.block.visible !== street) {
+      for (const c of this.chunks) {
+        c.block.visible = c.glow.visible = c.signs.visible = street;
+        c.pools.visible = street && this.map.light.night;
+      }
+    }
     this.placePotholes(cam);
     this.placeCoins(cam);
 
@@ -542,8 +642,25 @@ export class Renderer3D implements GameRenderer {
     }
   }
 
-  private placeCamera(cam: number, px: number, mode: 'menu' | 'game'): void {
+  private placeCamera(cam: number, px: number, mode: ViewMode): void {
     const c = this.camera;
+    if (mode === 'garage') {
+      // Slow orbit close around the vehicle, framed in the top half of the screen (the cards sit below).
+      c.fov = 34;
+      c.updateProjectionMatrix();
+      const a = 0.6 + this.time * 0.35;
+      // Far enough that the whole vehicle fits across the screen, even on a tall phone.
+      const len = VEHICLES[this.vehicleId].length;
+      const halfW = c.aspect < 1 ? len * 0.6 + 0.8 : len * 0.9 + 1.5;
+      const d = Math.max(6.5, halfW / (Math.tan((c.fov * Math.PI) / 360) * Math.min(c.aspect, 1.3)));
+      c.position.set(px + Math.sin(a) * d, d * (c.aspect < 1 ? 0.42 : 0.62), -cam + Math.cos(a) * d);
+      // On a phone the card covers the lower half, so aim below the vehicle to lift it up the screen.
+      c.lookAt(px, c.aspect < 1 ? -d * 0.2 : -d * 0.16, -cam);
+      const fog = this.scene.fog as THREE.Fog;
+      fog.near = 30;
+      fog.far = 90;
+      return;
+    }
     const menu = mode === 'menu';
     c.fov = menu ? 34 : 38 + this.speedFx * 9;
     c.updateProjectionMatrix();
@@ -565,8 +682,9 @@ export class Renderer3D implements GameRenderer {
     }
     c.lookAt(lookX, 0, lookZ);
     const fog = this.scene.fog as THREE.Fog;
-    fog.near = dist + 18;
-    fog.far = dist + 75;
+    const f = this.map.fog;
+    fog.near = dist + 18 * f - (1 - f) * 10;
+    fog.far = dist + 75 * f;
   }
 
   private placeSun(px: number, cam: number): void {

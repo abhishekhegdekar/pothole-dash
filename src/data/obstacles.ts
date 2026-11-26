@@ -15,6 +15,18 @@ export const ObstacleKind = {
   DeliveryBike: 10,
   /** Parked or stuck car (traffic jams). */
   StoppedCar: 11,
+  /** Manhole breathing steam (New York). */
+  SteamVent: 12,
+  /** Double-parked delivery truck. */
+  DeliveryTruck: 13,
+  /** Pedestrian standing in the road. */
+  Jaywalker: 14,
+  YellowCab: 15,
+  Cyclist: 16,
+  DoubleDecker: 17,
+  /** Cones and a barrier around a dug-up patch (London). */
+  Roadworks: 18,
+  BlackCab: 19,
 } as const;
 export type ObstacleKind = (typeof ObstacleKind)[keyof typeof ObstacleKind];
 
@@ -49,7 +61,18 @@ export const OBSTACLES: Record<ObstacleKind, ObstacleDef> = {
   [ObstacleKind.Taxi]: { w: 1.8, h: 4.0, variants: 3, effect: 'dent', motion: 0.5, place: 'lane' },
   [ObstacleKind.DeliveryBike]: { w: 0.9, h: 1.9, variants: 3, effect: 'dent', motion: 0.55, place: 'lane' },
   [ObstacleKind.StoppedCar]: { w: 1.8, h: 4.0, variants: 5, effect: 'dent', motion: 0, place: 'lane' },
+  [ObstacleKind.SteamVent]: { w: 1.4, h: 1.4, variants: 2, effect: 'dent', motion: 0, place: 'lane' },
+  [ObstacleKind.DeliveryTruck]: { w: 2.3, h: 6.5, variants: 3, effect: 'dent', motion: 0, place: 'lane' },
+  [ObstacleKind.Jaywalker]: { w: 0.8, h: 0.8, variants: 4, effect: 'dent', motion: 0, place: 'lane' },
+  [ObstacleKind.YellowCab]: { w: 1.9, h: 4.6, variants: 2, effect: 'dent', motion: 0.5, place: 'lane' },
+  [ObstacleKind.Cyclist]: { w: 0.8, h: 1.8, variants: 4, effect: 'dent', motion: 0.4, place: 'lane' },
+  [ObstacleKind.DoubleDecker]: { w: 2.5, h: 10, variants: 1, effect: 'dent', motion: 0.42, place: 'lane' },
+  [ObstacleKind.Roadworks]: { w: 2.4, h: 2.2, variants: 2, effect: 'dent', motion: 0, place: 'lane' },
+  [ObstacleKind.BlackCab]: { w: 1.8, h: 4.4, variants: 1, effect: 'dent', motion: 0.5, place: 'lane' },
 };
+
+/** Potholes and puddles: the hazards that tougher vehicles can shrug off. */
+export const POTHOLE_KINDS: ReadonlySet<ObstacleKind> = new Set([ObstacleKind.SmallPothole, ObstacleKind.LargePothole, ObstacleKind.Puddle]);
 
 export const ALL_KINDS = Object.values(ObstacleKind) as ObstacleKind[];
 
