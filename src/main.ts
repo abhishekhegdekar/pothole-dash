@@ -1,9 +1,16 @@
 import './style.css';
 import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
-import { STORY_ROAD } from './data/story';
+import { STORY_ROAD, legRoad } from './data/story';
+import {
+  CAMPS, CAMP_ORDER, campaignNodes, chapterAt, ending, gatesLevel, isCampId, kmDone, legMetres, routeKm,
+  type CampId, type CampaignNode, type DriveNode, type FootNode, type Line, type Scene,
+} from './data/campaign';
+import { SPEAKER_NAMES, portrait, sceneArt } from './ui/portraits';
+import { routeMapSvg } from './ui/routeMap';
+import { newCampaign } from './storage/save';
 import { MACHETE, PAINTS, UPGRADES, lvl, paintColour, storyRules, storyVehicle } from './data/upgrades';
-import { FootWorld } from './systems/foot';
+import { FootWorld, MALL_TEST, type FootLevel } from './systems/foot';
 import { FootControls } from './core/footControls';
 import { Foot3D } from './render3d/foot3d';
 import { VEHICLES, VEHICLE_ORDER, isVehicleId, type VehicleDef } from './data/vehicles';
@@ -148,6 +155,13 @@ function boot(): void {
   let mode: 'free' | 'story' | 'foot' = 'free';
   let road: MapDef = map;
   let garageOpen = false;
+  /** The current run is a campaign drive or stop (not the endless zombie run). */
+  let inCampaign = false;
+  let footLevel: FootLevel = MALL_TEST;
+  /** What the game-over card's main button does. */
+  let overAction: 'again' | 'continue' | 'restart' = 'again';
+  /** Where the workshop's back button goes. */
+  let shopReturn: 'pick' | 'route' | 'advance' = 'pick';
   let overReady = false;
   let overTimer = 0;
   let shownMeters = -1;
@@ -192,18 +206,21 @@ function boot(): void {
     }
   };
   const fmt = (n: number): string => n.toLocaleString('en-IN');
+  /** Story line under the menu's Story Mode button; set once the campaign code below is ready. */
+  let storySub = (): string => 'The night of the siren. Get out of Mumbai.';
   const renderWallet = (): void => {
     ui.walletCoins.textContent = fmt(save.coins);
     ui.walletPoints.textContent = fmt(save.points);
     ui.mapsCoins.textContent = fmt(save.coins);
     el('menuEyebrow').textContent = `${map.name} · ${map.conditions}`;
     ui.best.textContent = save.bestScore > 0 ? `Best score ${fmt(save.bestScore)}` : 'Watch the road. It bites.';
+    el('menuStorySub').textContent = storySub();
   };
   renderSettings();
   renderWallet();
 
   const show = (which: HTMLElement | null): void => {
-    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage, ui.storyPick, el('workshop')]) o.hidden = o !== which;
+    for (const o of [ui.menu, ui.paused, ui.over, ui.settings, ui.maps, ui.garage, ui.storyPick, el('workshop'), el('scene'), el('route')]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
     ui.pedals.classList.toggle('is-hidden', mode === 'foot' || which !== null || state === 'menu' || state === 'over');
     ui.footPad.hidden = mode !== 'foot' || which !== null || state === 'menu' || state === 'over';
@@ -233,7 +250,7 @@ function boot(): void {
     world.reset(newSeed());
     renderer.resetRun();
     if (mode === 'foot') {
-      foot.reset(newSeed());
+      foot.reset(newSeed(), footLevel);
       foot.weapon = save.weapons.includes('machete') ? 'machete' : 'bat';
       footIn.reset();
       foot3d?.hidePopups();
@@ -318,6 +335,8 @@ function boot(): void {
       ui.overTitle.textContent = foot.escaped ? 'Back to the SUV!' : 'Raj is down. Tanvi pulls him out.';
       ui.overEarned.textContent = foot.escaped ? `+${foot.scrap + 15} scrap (+15 for getting out)` : `+${Math.floor(foot.scrap / 2)} scrap`;
     }
+    overAction = 'again';
+    if (inCampaign) campaignOver();
     renderWallet();
     overTimer = window.setTimeout(() => {
       overReady = true;
@@ -325,6 +344,379 @@ function boot(): void {
       ui.btnAgain.focus({ preventScroll: true });
     }, 1300);
   };
+
+  // Story campaign.
+  const camp = (): CampId | null => (isCampId(save.campaign.camp) ? save.campaign.camp : null);
+  const nodes = (): CampaignNode[] => campaignNodes(camp());
+  const node = (): CampaignNode | undefined => nodes()[save.campaign.node];
+  const kmLeft = (): number => {
+    const c = camp();
+    if (!c) return 0;
+    const n = node();
+    const done = kmDone(c, save.campaign.node) + (n?.kind === 'drive' && state !== 'menu' ? Math.min(1, world.dist / legMetres(n.km)) * n.km : 0);
+    return Math.max(0, Math.round(routeKm(c) - done));
+  };
+  const flash = (text: string, ms = 2200): void => {
+    ui.banner.textContent = text;
+    ui.banner.hidden = false;
+    replay(ui.banner, 'is-on');
+    window.clearTimeout(bannerTimer);
+    bannerTimer = window.setTimeout(() => (ui.banner.hidden = true), ms);
+  };
+
+  /** Results of a campaign drive or stop, on the game-over card. */
+  function campaignOver(): void {
+    const n = node();
+    const ok = mode === 'foot' ? foot.escaped : world.endReason === 'arrived';
+    if (!n) return;
+    if (ok) {
+      if (n.kind === 'drive') {
+        save.campaign.fuel = world.fuel;
+        save.scrap += 10;
+        ui.overTitle.textContent = `Made it: ${n.place.split(' to ').pop()}`;
+        ui.overEarned.textContent = `${world.kills} zombies knocked down · +${fmt(world.coinCount + 10)} scrap`;
+        ui.overDist.textContent = `${kmLeft()} km`;
+        el('overFinalLabel').textContent = 'Left to the camp';
+      } else if (n.kind === 'foot') {
+        if (n.level.layout === 'pump') save.campaign.fuel = 1;
+        else if (n.level.layout === 'mall') save.campaign.fuel = Math.max(save.campaign.fuel, 0.75);
+        ui.overTitle.textContent = n.level.layout === 'gates' ? 'The generator roars to life!' : n.level.layout === 'apartment' ? 'Down to the SUV!' : 'Back to the SUV!';
+      }
+      overAction = 'continue';
+      ui.btnAgain.textContent = 'Continue';
+    } else {
+      ui.btnAgain.textContent = 'Try again';
+      if (mode !== 'foot') ui.overEarned.textContent = `${world.kills} zombies knocked down · ${kmLeft()} km still to go`;
+    }
+    ui.overBest.textContent = '';
+    ui.overBadge.hidden = true;
+    store.save(save);
+  }
+
+  /** Puts a campaign drive's road behind the menus, so the scene and the map sit on it. */
+  const showRoad = (n: DriveNode | null): void => {
+    const next = n ? legRoad(n.theme, n.time, n.danger, n.place) : STORY_ROAD;
+    if (mode !== 'story') setMode('story');
+    road = next;
+    world.configure(storyVehicle(save.upgrades), road.laneCount, road.mix, storyRules(save.upgrades));
+    world.reset(newSeed());
+    renderer.setVehicle?.('rig', paintColour(save.paint));
+    renderer.setMap?.(road);
+    renderer.resetRun();
+  };
+  /** The next drive from here, for the background. */
+  const nextDrive = (): DriveNode | null => {
+    const list = nodes();
+    for (let i = save.campaign.node; i < list.length; i++) if (list[i]!.kind === 'drive') return list[i] as DriveNode;
+    return null;
+  };
+
+  // Scene player: one line at a time, tap to go on; choices at the end.
+  const sc = {
+    bg: el('sceneBg'), chapter: el('sceneChapter'), chNum: el('sceneChNum'), chTitle: el('sceneChTitle'), place: el('scenePlace'),
+    panel: el('scenePanel'), portrait: el('scenePortrait'), who: el('sceneWho'), line: el('sceneLine'), choices: el('sceneChoices'), tap: el('sceneTap'),
+  };
+  let sceneLines: Line[] = [];
+  let sceneI = 0;
+  let sceneChoice: Scene['choice'] | undefined;
+  let sceneDone: (() => void) | null = null;
+  let sceneLock = 0;
+  const showLine = (l: Line): void => {
+    const narr = l.who === 'narrator';
+    sc.panel.classList.toggle('is-narrator', narr);
+    sc.panel.classList.toggle('is-radio', l.who === 'kavita' || l.who === 'alert');
+    sc.portrait.innerHTML = narr ? '' : portrait(l.who, l.name);
+    sc.portrait.hidden = narr;
+    sc.who.textContent = l.who === 'survivor' ? l.name ?? '' : SPEAKER_NAMES[l.who];
+    sc.line.textContent = l.text;
+    replay(sc.panel, 'is-in');
+    sceneLock = performance.now() + 250;
+  };
+  const playScene = (scene: Scene, chapter: [number, string] | undefined, place: string, done: () => void): void => {
+    sc.bg.innerHTML = sceneArt(scene.bg);
+    sc.chapter.hidden = !chapter;
+    if (chapter) {
+      sc.chNum.textContent = `Chapter ${chapter[0]}`;
+      sc.chTitle.textContent = chapter[1];
+      replay(sc.chapter, 'is-in');
+    }
+    sc.place.textContent = place;
+    sc.choices.hidden = true;
+    sc.tap.hidden = false;
+    sceneLines = scene.lines;
+    sceneChoice = scene.choice;
+    sceneI = 0;
+    sceneDone = done;
+    state = 'menu';
+    show(el('scene'));
+    showLine(sceneLines[0]!);
+  };
+  const endScene = (): void => {
+    const done = sceneDone;
+    sceneDone = null;
+    done?.();
+  };
+  const showChoices = (): void => {
+    const ch = sceneChoice!;
+    sceneChoice = undefined;
+    sc.choices.textContent = '';
+    sc.tap.hidden = true;
+    const prompt = document.createElement('p');
+    prompt.className = 'sc-prompt';
+    prompt.textContent = ch.prompt;
+    sc.choices.appendChild(prompt);
+    for (const o of ch.options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sc-choice';
+      const cant = (o.scrap ?? 0) < 0 && save.scrap < -(o.scrap ?? 0);
+      b.disabled = cant;
+      b.textContent = cant ? `${o.label} (not enough scrap)` : o.label;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cpg = save.campaign;
+        if (o.helper) cpg.helpers++;
+        if (o.kind) cpg.kindness++;
+        if (o.fuel) cpg.fuel = Math.max(0.2, Math.min(1, cpg.fuel + o.fuel));
+        if (o.scrap) save.scrap = Math.max(0, save.scrap + o.scrap);
+        store.save(save);
+        sfx.ding(2);
+        sc.choices.hidden = true;
+        sc.tap.hidden = false;
+        sceneLines = o.reply;
+        sceneI = 0;
+        showLine(sceneLines[0]!);
+      });
+      sc.choices.appendChild(b);
+    }
+    sc.choices.hidden = false;
+  };
+  const nextLine = (): void => {
+    if (!sc.choices.hidden || performance.now() < sceneLock) return;
+    sfx.swish();
+    sceneI++;
+    if (sceneI < sceneLines.length) showLine(sceneLines[sceneI]!);
+    else if (sceneChoice) showChoices();
+    else endScene();
+  };
+  el('scene').addEventListener('click', nextLine);
+  el('btnSceneSkip').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!sc.choices.hidden) return;
+    if (sceneChoice) {
+      sceneI = sceneLines.length - 1;
+      showLine(sceneLines[sceneI]!);
+      showChoices();
+    } else endScene();
+  });
+
+  // Route map: pick a camp, or see the road so far and the next stop.
+  let pickCamp: CampId | null = null;
+  const renderRoute = (): void => {
+    const c = camp();
+    const n = node();
+    el('routeScrap').textContent = fmt(save.scrap);
+    const camps = el('routeCamps');
+    const next = el('routeNext');
+    camps.textContent = '';
+    const go = el<HTMLButtonElement>('btnRouteGo');
+    el('btnRouteShop').hidden = !c;
+    if (n?.kind === 'choose' || (!c && !n)) {
+      el('routeTitle').textContent = 'Choose a camp';
+      el('routeMap').innerHTML = routeMapSvg(null, 0, pickCamp);
+      for (const id of CAMP_ORDER) {
+        const cp = CAMPS[id];
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `camp-card camp-${id}`;
+        b.setAttribute('aria-pressed', String(pickCamp === id));
+        b.innerHTML = '<span class="cc-name"></span><span class="cc-near"></span><span class="cc-blurb"></span><span class="cc-traits"></span>';
+        b.querySelector('.cc-name')!.textContent = cp.name;
+        b.querySelector('.cc-near')!.textContent = `${cp.near} · ${routeKm(id)} km`;
+        b.querySelector('.cc-blurb')!.textContent = cp.blurb;
+        b.querySelector('.cc-traits')!.textContent = cp.traits;
+        b.addEventListener('click', () => {
+          pickCamp = id;
+          sfx.swish();
+          renderRoute();
+          go.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
+        camps.appendChild(b);
+      }
+      camps.hidden = false;
+      next.classList.add('is-pick');
+      el('routeChapter').textContent = 'Chapter 1 · Siren Night';
+      el('routeKm').textContent = pickCamp ? `${routeKm(pickCamp)} km` : '72 hours';
+      el('routeNextName').textContent = pickCamp ? `${CAMPS[pickCamp].name}, ${CAMPS[pickCamp].near}` : 'Pick a camp on the map';
+      el('routeNextGoal').textContent = pickCamp ? CAMPS[pickCamp].traits : 'Each camp is a different road out of Mumbai.';
+      go.textContent = pickCamp ? 'Head there' : 'Choose a camp';
+      go.disabled = !pickCamp;
+      return;
+    }
+    camps.hidden = true;
+    next.classList.remove('is-pick');
+    go.disabled = false;
+    el('routeTitle').textContent = c ? CAMPS[c].name : 'Get out of Mumbai';
+    el('routeMap').innerHTML = routeMapSvg(c, save.campaign.node);
+    const [num, title] = chapterAt(c, save.campaign.node);
+    el('routeChapter').textContent = `Chapter ${num} · ${title}`;
+    el('routeKm').textContent = c ? `${kmLeft()} km to go` : '72 hours';
+    if (!n) return;
+    el('routeNextName').textContent = n.place;
+    if (n.kind === 'drive') {
+      const tod = { night: 'Night', dawn: 'Dawn', day: 'Day', dusk: 'Dusk' }[n.time];
+      const terr = { city: 'City streets', highway: 'Highway', ghat: 'Ghat road, fog', coast: 'Coast road' }[n.theme];
+      el('routeNextGoal').textContent = `${n.km} km · ${terr} · ${tod} · Tank ${Math.round(Math.max(save.campaign.fuel, 0.45) * 100)}%`;
+      go.textContent = 'Drive';
+    } else if (n.kind === 'foot') {
+      el('routeNextGoal').textContent = n.goal;
+      go.textContent = 'Go in';
+    } else if (n.kind === 'garage') {
+      el('routeNextGoal').textContent = 'Spend scrap and points on the SUV before the next road.';
+      go.textContent = 'Open the workshop';
+    } else {
+      el('routeNextGoal').textContent = '';
+      go.textContent = 'Continue';
+    }
+  };
+  const openRoute = (): void => {
+    state = 'menu';
+    renderRoute();
+    show(el('route'));
+  };
+  el('btnRouteGo').addEventListener('click', () => {
+    sfx.unlock();
+    const n = node();
+    if (n?.kind === 'choose') {
+      if (!pickCamp) return;
+      save.campaign.camp = pickCamp;
+      sfx.ding(3);
+      advance();
+      return;
+    }
+    if (!n) return;
+    if (n.kind === 'drive') startDrive(n);
+    else if (n.kind === 'foot') startFoot(n);
+    else if (n.kind === 'garage') {
+      shopReturn = 'advance';
+      openWorkshop();
+    } else runNode();
+  });
+  el('btnRouteShop').addEventListener('click', () => {
+    shopReturn = 'route';
+    openWorkshop();
+  });
+  el('btnRouteBack').addEventListener('click', () => toMenu());
+
+  const startDrive = (n: DriveNode): void => {
+    showRoad(n);
+    inCampaign = true;
+    const startFuel = Math.max(save.campaign.fuel, 0.45);
+    if (save.campaign.fuel < 0.45) flash('Tanvi siphons fuel from a wreck', 2400);
+    world.configure(storyVehicle(save.upgrades), road.laneCount, road.mix, { ...storyRules(save.upgrades), goal: legMetres(n.km), startFuel });
+    buildDents();
+    ui.hudLabel.textContent = 'To the camp';
+    start();
+    if (save.campaign.fuel >= 0.45) flash(`${n.place} · ${n.km} km`, 2400);
+  };
+  const startFoot = (n: FootNode): void => {
+    if (!foot3d) {
+      // No WebGL: the on-foot parts cannot be drawn, so count them as done.
+      advance();
+      return;
+    }
+    inCampaign = true;
+    footLevel = n.level.layout === 'gates' ? gatesLevel(save.campaign.helpers) : n.level;
+    setMode('foot');
+    foot3d.paint = paintColour(save.paint);
+    ui.hudLabel.textContent = { apartment: 'Found', pump: 'Fuel cans', mall: 'Supplies', gates: 'Parts' }[footLevel.layout];
+    start();
+    flash(n.goal, 3200);
+  };
+
+  /** Plays whatever the campaign is at now. */
+  function runNode(): void {
+    const n = node();
+    inCampaign = false;
+    if (!n) {
+      // Finished or broken: back to the start.
+      save.campaign = newCampaign(save.campaign.endings);
+      store.save(save);
+      toMenu();
+      return;
+    }
+    if (mode !== 'story') setMode('story');
+    if (n.kind === 'scene') {
+      showRoad(nextDrive());
+      playScene(n.scene, n.chapter, n.place, advance);
+    } else if (n.kind === 'end') {
+      const c = camp()!;
+      const e = ending(save.campaign.helpers, save.campaign.kindness, c);
+      playScene({ bg: save.campaign.helpers >= 2 ? 'dawn' : 'camp', lines: e.lines }, undefined, e.title, () => finishStory(e.title));
+    } else {
+      showRoad(n.kind === 'drive' ? n : nextDrive());
+      pickCamp = null;
+      openRoute();
+    }
+  }
+  function advance(): void {
+    save.campaign.node++;
+    save.campaign.started = true;
+    store.save(save);
+    runNode();
+  }
+  const finishStory = (title: string): void => {
+    const c = camp()!;
+    const helpers = save.campaign.helpers;
+    if (!save.campaign.endings.includes(title)) save.campaign.endings.push(title);
+    save.campaign = newCampaign(save.campaign.endings);
+    save.scrap += 100;
+    store.save(save);
+    state = 'over';
+    overReady = true;
+    overAction = 'restart';
+    ui.overTitle.textContent = 'The End';
+    el('overFinalLabel').textContent = CAMPS[c].name;
+    ui.overDist.textContent = title.replace('Ending: ', '');
+    ['overL1', 'overL2', 'overL3'].forEach((id, i) => (el(id).textContent = ['Road driven', 'Survivors', 'Endings seen'][i]!));
+    ui.overScore.textContent = `${routeKm(c)} km`;
+    ui.overNear.textContent = String(helpers);
+    ui.overCombo.textContent = `${save.campaign.endings.length} of 2`;
+    ui.overBadge.hidden = true;
+    ui.overEarned.textContent = '+100 scrap for the workshop';
+    ui.overBest.textContent = helpers >= 2 ? '' : 'Take more survivors along for the other ending.';
+    ui.btnAgain.textContent = 'Play the story again';
+    show(ui.over);
+  };
+  const storyStatus = (): string => {
+    const cp = save.campaign;
+    if (!cp.started) return 'The night of the siren. Get out of Mumbai.';
+    const [num, title] = chapterAt(camp(), cp.node);
+    return `Continue · Chapter ${num}: ${title}${camp() ? ` · ${kmLeft()} km to go` : ''}`;
+  };
+  storySub = storyStatus;
+  renderWallet();
+  const renderStoryPick = (): void => {
+    const cp = save.campaign;
+    const [num, title] = chapterAt(camp(), cp.node);
+    el('storyGoCond').textContent = `Chapter ${num} · ${title}`;
+    el('storyGoName').textContent = cp.started ? 'Continue the story' : 'Start the story';
+    el('storyGoTag').textContent = cp.started
+      ? `${node()?.place ?? ''}${camp() ? `. Heading for ${CAMPS[camp()!].name}.` : '.'}`
+      : 'Mumbai, 2:47 in the morning. Every phone in the building screams at once.';
+    el('storyGoKm').textContent = camp() ? `${kmLeft()} km to go` : cp.endings.length ? `Endings seen: ${cp.endings.length} of 2` : 'Six chapters, three camps';
+    el('storyGoBtn').textContent = cp.started ? 'Continue' : 'Play';
+    el('btnStoryReset').hidden = !cp.started;
+  };
+  el('btnStoryGo').addEventListener('click', () => {
+    sfx.unlock();
+    runNode();
+  });
+  el('btnStoryReset').addEventListener('click', () => {
+    save.campaign = newCampaign(save.campaign.endings);
+    store.save(save);
+    renderStoryPick();
+  });
 
   // Map select.
   const useMap = (next: MapDef): void => {
@@ -418,7 +810,13 @@ function boot(): void {
 
   // Buttons.
   ui.btnStart.addEventListener('click', openMaps);
-  ui.btnAgain.addEventListener('click', () => overReady && start());
+  const again = (): void => {
+    if (!overReady) return;
+    if (overAction === 'continue') advance();
+    else if (overAction === 'restart') runNode();
+    else start();
+  };
+  ui.btnAgain.addEventListener('click', again);
   ui.btnResume.addEventListener('click', resume);
   ui.paused.addEventListener('pointerdown', (e) => {
     if (e.target === ui.paused) resume();
@@ -555,29 +953,36 @@ function boot(): void {
   }
   el('btnShopBack').addEventListener('click', () => {
     garageOpen = false;
-    show(ui.storyPick);
+    const back = shopReturn;
+    shopReturn = 'pick';
+    if (back === 'advance') advance();
+    else if (back === 'route') openRoute();
+    else show(ui.storyPick);
   });
 
   ui.btnStory.addEventListener('click', () => {
     sfx.unlock();
+    renderStoryPick();
     show(ui.storyPick);
   });
   el('btnStoryBack').addEventListener('click', () => show(ui.menu));
   el('btnStoryRoad').addEventListener('click', () => {
+    inCampaign = false;
     setMode('story');
+    if (road !== STORY_ROAD) {
+      road = STORY_ROAD;
+      renderer.setMap?.(road);
+    }
+    ui.hudLabel.textContent = 'Distance';
     world.configure(storyVehicle(save.upgrades), road.laneCount, road.mix, storyRules(save.upgrades));
     buildDents();
     start();
   });
-  el('btnStoryShop').addEventListener('click', openWorkshop);
-  el('btnStoryFoot').addEventListener('click', () => {
-    if (!foot3d) {
-      show(ui.menu);
-      return;
-    }
-    setMode('foot');
-    start();
+  el('btnStoryShop').addEventListener('click', () => {
+    shopReturn = 'pick';
+    openWorkshop();
   });
+  el('btnStoryShop').hidden = false;
   // Garage: browse the vehicles, buy with coins, pick one to drive.
   let browse = VEHICLE_ORDER.indexOf(vehicle.id);
   const bar = (host: HTMLElement, n: number, of: number): void => {
@@ -678,6 +1083,7 @@ function boot(): void {
     world.reset(newSeed());
     renderer.resetRun();
     state = 'menu';
+    inCampaign = false;
     setMode('free');
     renderWallet();
     show(ui.menu);
@@ -721,11 +1127,17 @@ function boot(): void {
         else if (a === Action.Pause) closeGarage();
       } else if (!el('workshop').hidden) {
         if (a === Action.Pause) el('btnShopBack').click();
+      } else if (!el('scene').hidden) {
+        if (a === Action.Confirm || a === Action.Right) nextLine();
+        else if (a === Action.Pause) toMenu();
+      } else if (!el('route').hidden) {
+        if (a === Action.Confirm) el('btnRouteGo').click();
+        else if (a === Action.Pause) toMenu();
       } else if (!ui.storyPick.hidden) {
         if (a === Action.Pause) show(ui.menu);
       } else if (a === Action.Confirm && ui.settings.hidden && ui.maps.hidden) openMaps();
     } else if (state === 'over' && overReady && a === Action.Confirm) {
-      start();
+      again();
     }
   };
 
@@ -747,16 +1159,15 @@ function boot(): void {
       vibrate(40);
     }
     if (ev.loot) {
-      const name = { scrap: `+${ev.lootAmount} scrap`, fuel: 'Fuel can!', med: 'Medkit +35', inhaler: "Lara's inhaler!" }[ev.loot];
+      const name = {
+        scrap: `+${ev.lootAmount} scrap`, fuel: 'Fuel can!', med: 'Medkit +35', inhaler: "Lara's inhaler!",
+        keys: 'SUV keys!', tools: "Tanvi's toolbox!", part: 'Generator part!',
+      }[ev.loot];
       if (ev.loot === 'scrap') sfx.coin(2);
       else sfx.fuel();
       foot3d?.popText(name, ev.lootX, ev.lootY, ev.loot === 'scrap' ? '#d4d8dc' : '#ffc21a');
       if (ev.loot !== 'scrap' && ev.loot !== 'med' && foot.exitOpen) {
-        ui.banner.textContent = 'Got it! Back to the door';
-        ui.banner.hidden = false;
-        replay(ui.banner, 'is-on');
-        window.clearTimeout(bannerTimer);
-        bannerTimer = window.setTimeout(() => (ui.banner.hidden = true), 1900);
+        flash({ apartment: 'Got them! Back to the stairs', pump: 'Enough fuel! Back to the SUV', mall: 'Got it! Back to the door', gates: 'All three! Run to the generator' }[foot.level.layout], 1900);
       }
     }
     if (ev.done && state === 'play') gameOver();
@@ -785,7 +1196,7 @@ function boot(): void {
     } else if (mode === 'foot' && (state === 'play' || state === 'over')) {
       updateFoot(dt);
     } else if (state === 'play' || state === 'over') {
-      const slowmo = !world.alive && world.crashT < SLOWMO_TIME;
+      const slowmo = !world.alive && world.endReason === 'wreck' && world.crashT < SLOWMO_TIME;
       world.update(slowmo ? dt * SLOWMO_SCALE : dt);
       const ev = world.events;
       if (ev.laneChange !== 0) sfx.swish();
@@ -836,7 +1247,13 @@ function boot(): void {
         }
         vibrate(ev.crash ? 120 : 40);
       }
-      if (ev.crash && state === 'play') gameOver();
+      if ((ev.crash || ev.arrived) && state === 'play') {
+        if (ev.arrived) {
+          sfx.horn();
+          flash('Made it!', 1400);
+        }
+        gameOver();
+      }
       world.clearEvents();
     } else if (state === 'menu') {
       world.attract(dt);
@@ -877,7 +1294,7 @@ function boot(): void {
       }
       return;
     }
-    const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
+    const slow = state === 'over' && world.endReason === 'wreck' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
     renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? (garageOpen ? 'garage' : 'menu') : 'game');
     const fx = Math.round(renderer.speedFx * 100) / 100;
     if (fx !== shownFx) {
@@ -887,7 +1304,7 @@ function boot(): void {
     const meters = Math.floor(world.dist);
     if (state !== 'menu' && state !== 'over' && meters !== shownMeters) {
       shownMeters = meters;
-      ui.dist.textContent = formatDistance(world.dist);
+      ui.dist.textContent = inCampaign ? `${kmLeft()} km` : formatDistance(world.dist);
     }
     if (world.coinCount !== shownCoins) {
       shownCoins = world.coinCount;

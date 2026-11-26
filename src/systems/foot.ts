@@ -8,7 +8,10 @@ import { Rng } from '../core/rng';
 
 export type ZombieType = 'walker' | 'runner' | 'brute';
 export type WeaponId = 'bat' | 'machete';
-export type LootKind = 'scrap' | 'fuel' | 'med' | 'inhaler';
+export type LootKind = 'scrap' | 'fuel' | 'med' | 'inhaler' | 'keys' | 'tools' | 'part';
+/** Supplies that count toward a level's goal. */
+export const SUPPLY_KINDS: LootKind[] = ['fuel', 'inhaler', 'keys', 'tools', 'part'];
+export type FootLayout = 'mall' | 'apartment' | 'pump' | 'gates';
 
 export interface ZombieDef {
   speed: number;
@@ -76,7 +79,10 @@ export interface Shelf {
   /** Half sizes. */
   hw: number;
   hh: number;
-  /** 0 shelf, 1 checkout counter, 2 pillar. */
+  /**
+   * 0 shelf, 1 counter, 2 pillar, 3 wall, 4 parked car, 5 fuel pump, 6 sandbags, 7 tent,
+   * 8 furniture, 9 kiosk, 10 truck, 11 generator.
+   */
   kind: number;
 }
 
@@ -95,15 +101,23 @@ export interface FootEvents {
 }
 
 export interface FootLevel {
+  layout: FootLayout;
   width: number;
   depth: number;
-  /** How many supply crates (fuel or inhaler) Raj must find before leaving. */
+  /** How many supply crates Raj must find before leaving. */
   goal: number;
+  /** The supply crates on the floor, in order (can be more than the goal, to leave spares). */
+  supplies: LootKind[];
   zombies: Partial<Record<ZombieType, number>>;
+  /** All crates, supplies included; the rest hold scrap and medkits. */
   crates: number;
+  /** More zombies keep coming from the far end: one every `every` seconds, up to `cap` on their feet at once. */
+  waves?: { every: number; cap: number; pool: number };
 }
 
-export const MALL_TEST: FootLevel = { width: 24, depth: 34, goal: 2, zombies: { walker: 9, runner: 3, brute: 1 }, crates: 9 };
+export const MALL_TEST: FootLevel = {
+  layout: 'mall', width: 24, depth: 34, goal: 2, supplies: ['inhaler', 'fuel', 'fuel'], zombies: { walker: 9, runner: 3, brute: 1 }, crates: 9,
+};
 
 const PLAYER_R = 0.32;
 const PLAYER_SPEED = 4.3;
@@ -140,6 +154,7 @@ export class FootWorld {
   /** Moving this step (for the walk animation). */
   moving = false;
   private readonly rng = new Rng(1);
+  private waveT = 0;
 
   constructor(seed = 1, level: FootLevel = MALL_TEST) {
     this.reset(seed, level);
@@ -175,10 +190,9 @@ export class FootWorld {
   }
 
   /** Supermarket floor: checkout counters near the door, then rows of shelves with cross aisles. */
-  private buildLayout(): void {
+  private buildMall(): void {
     const { width: W, depth: D } = this.level;
     const r = this.rng;
-    this.shelves.length = 0;
     // Checkout counters with gaps between them.
     for (let x = 3; x < W - 2; x += 4.2) {
       if (Math.abs(x + 1 - W / 2) < 2.2) continue;
@@ -196,14 +210,108 @@ export class FootWorld {
     }
     // A few pillars along the back.
     for (let x = 4; x < W - 2; x += 8) this.shelves.push({ x, y: D - 2.2, hw: 0.35, hh: 0.35, kind: 2 });
+  }
 
+  /** A wall from (x0, y0) to (x1, y1), axis aligned, 0.3 m thick. */
+  private wall(x0: number, y0: number, x1: number, y1: number): void {
+    const t = 0.15;
+    this.shelves.push({ x: (x0 + x1) / 2, y: (y0 + y1) / 2, hw: Math.max(t, Math.abs(x1 - x0) / 2), hh: Math.max(t, Math.abs(y1 - y0) / 2), kind: 3 });
+  }
+
+  /** Raj's building, ground floor: a lobby, flats with open doors on both sides, and the parking at the back. */
+  private buildApartment(): void {
+    const { width: W, depth: D } = this.level;
+    const r = this.rng;
+    const c0 = W / 2 - 3;
+    const c1 = W / 2 + 3;
+    // Lobby: the watchman's desk and the lift shaft by the stairs.
+    this.shelves.push({ x: c0 - 1.6, y: 3.2, hw: 1.0, hh: 0.4, kind: 1 });
+    this.shelves.push({ x: c1 + 1.8, y: 2.6, hw: 1.1, hh: 1.1, kind: 2 });
+    // Flats: two on each side of the corridor, a doorway into each from the corridor.
+    for (const [x, edge] of [[c0, 0], [c1, W]] as Array<[number, number]>) {
+      for (const [y0, y1] of [[5, 12], [12, 19]] as Array<[number, number]>) {
+        const door = r.range(y0 + 1.2, y1 - 2.4);
+        this.wall(x, y0, x, door);
+        this.wall(x, door + 1.6, x, y1);
+        this.wall(Math.min(x, edge), y1, Math.max(x, edge), y1);
+        // A sofa or a cupboard inside.
+        const fx = (x + edge) / 2 + r.range(-1, 1);
+        this.shelves.push({ x: fx, y: y0 + 1.6 + r.range(0, 2.5), hw: 1.0, hh: 0.45, kind: 8 });
+      }
+      this.wall(Math.min(x, edge), 5, Math.max(x, edge), 5);
+    }
+    // Parking: rows of cars under the building, pillars between them.
+    for (const y of [23.5, 29.5]) {
+      for (let x = 2.4; x < W - 2; x += 3.6) {
+        if (Math.abs(x - W / 2) < 1.5) continue;
+        if (r.chance(0.75)) this.shelves.push({ x, y, hw: 0.85, hh: 2.0, kind: 4 });
+      }
+    }
+    for (let x = 4.2; x < W - 2; x += 7.2) this.shelves.push({ x, y: 26.5, hw: 0.35, hh: 0.35, kind: 2 });
+    void D;
+  }
+
+  /** Highway fuel station at night: pump islands under the canopy, the kiosk, and cars left at the pumps. */
+  private buildPump(): void {
+    const { width: W } = this.level;
+    const r = this.rng;
+    for (const x of [W / 2 - 6, W / 2, W / 2 + 6]) this.shelves.push({ x, y: 11, hw: 0.55, hh: 1.6, kind: 5 });
+    // Canopy pillars.
+    for (const x of [W / 2 - 9, W / 2 + 9]) for (const y of [8, 14]) this.shelves.push({ x, y, hw: 0.3, hh: 0.3, kind: 2 });
+    // Kiosk and the air pump, and a tanker parked behind.
+    this.shelves.push({ x: W / 2 - 5, y: 24, hw: 4, hh: 2.4, kind: 9 });
+    this.shelves.push({ x: W / 2 + 7, y: 25, hw: 1.2, hh: 4.2, kind: 10 });
+    // Cars abandoned at the pumps and on the forecourt.
+    for (let i = 0; i < 4; i++) {
+      const x = [W / 2 - 3, W / 2 + 3, 3, W - 3][r.int(0, 4)]!;
+      const y = r.range(8, 19);
+      if (!this.blocked(x, y, 2.4)) this.shelves.push({ x, y, hw: 0.85, hh: 2.0, kind: 4 });
+    }
+  }
+
+  /** Outside the camp gate: sandbag walls, tents and army trucks, the generator by the gate. */
+  private buildGates(): void {
+    const { width: W, depth: D } = this.level;
+    const r = this.rng;
+    // Sandbag lines with gaps to run through.
+    for (const y of [9, 19]) {
+      const gap = r.range(4, W - 8);
+      for (let x = 1; x < W - 1; x += 3.2) {
+        if (x > gap && x < gap + 4.2) continue;
+        this.shelves.push({ x: x + 1.4, y, hw: 1.4, hh: 0.45, kind: 6 });
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const p = [r.range(3, W - 3), r.range(11, D - 4)] as const;
+      if (!this.blocked(p[0], p[1], 2.2)) this.shelves.push({ x: p[0], y: p[1], hw: 1.5, hh: 1.5, kind: 7 });
+    }
+    for (const x of [3.2, W - 3.2]) this.shelves.push({ x, y: r.range(23, D - 4), hw: 1.1, hh: 2.6, kind: 10 });
+    // The generator by the gate.
+    this.shelves.push({ x: W / 2 + 4, y: 3, hw: 1.2, hh: 0.8, kind: 11 });
+  }
+
+  private buildLayout(): void {
+    this.shelves.length = 0;
+    const L = this.level;
+    if (L.layout === 'apartment') this.buildApartment();
+    else if (L.layout === 'pump') this.buildPump();
+    else if (L.layout === 'gates') this.buildGates();
+    else this.buildMall();
+    this.placeThings();
+  }
+
+  /** Crates and zombies for any layout. */
+  private placeThings(): void {
+    const { depth: D } = this.level;
+    const r = this.rng;
     // Crates: supplies toward the back, scrap and medkits around.
     this.crates.length = 0;
-    const want = this.level.crates;
+    const sup = this.level.supplies;
+    const want = Math.max(this.level.crates, sup.length);
     for (let i = 0; i < want; i++) {
-      const supply = i < this.level.goal + 1;
-      const kind: LootKind = supply ? (i === 0 ? 'inhaler' : 'fuel') : r.chance(0.3) ? 'med' : 'scrap';
-      const p = this.freeSpot(supply ? 18 : 9, D - 1.5, 0.5);
+      const supply = i < sup.length;
+      const kind: LootKind = supply ? sup[i]! : r.chance(0.3) ? 'med' : 'scrap';
+      const p = this.freeSpot(supply ? Math.min(18, D * 0.5) : 9, D - 1.5, 0.5);
       this.crates.push({ active: true, x: p[0], y: p[1], kind, amount: kind === 'scrap' ? r.int(3, 9) : 1, search: 0 });
     }
 
@@ -219,6 +327,37 @@ export class FootWorld {
         });
       }
     }
+    // Reserve for waves: asleep until called in.
+    for (let i = 0; i < (this.level.waves?.pool ?? 0); i++) {
+      this.zombies.push({
+        active: false, type: 'walker', x: 0, y: D, hp: 0, facing: -Math.PI / 2,
+        lunge: 0, stagger: 0, down: 0, fall: 1, wanderA: 0, wanderT: 1, variant: v++,
+      });
+    }
+    this.waveT = this.level.waves?.every ?? 0;
+  }
+
+  /** Calls in the next zombie of a wave at the far end. */
+  private spawnWave(dt: number): void {
+    const w = this.level.waves;
+    if (!w) return;
+    this.waveT -= dt;
+    if (this.waveT > 0) return;
+    this.waveT = w.every;
+    const standing = this.zombies.filter((z) => z.active && z.down === 0).length;
+    if (standing >= w.cap) return;
+    const z = this.zombies.find((q) => !q.active);
+    if (!z) return;
+    const type: ZombieType = this.rng.chance(0.15) ? 'brute' : this.rng.chance(0.35) ? 'runner' : 'walker';
+    const W = this.level.width;
+    let x = this.rng.range(1, W - 1);
+    for (let k = 0; k < 10 && this.blocked(x, this.level.depth - 0.8, ZOMBIES[type].radius); k++) x = this.rng.range(1, W - 1);
+    Object.assign(z, {
+      active: true, type, x, y: this.level.depth - 0.8, hp: ZOMBIES[type].hp, facing: -Math.PI / 2,
+      lunge: 0, stagger: 0, down: 0, fall: 1, wanderT: 0.5,
+    });
+    // Called in by the noise: they head straight for Raj.
+    z.wanderA = -Math.PI / 2;
   }
 
   /** A random point on open floor between y0 and y1. */
@@ -283,6 +422,7 @@ export class FootWorld {
 
     if (attack && this.swingCd <= 0) this.swing();
 
+    this.spawnWave(dt);
     this.updateZombies(dt);
     this.updateCrates(dt);
 

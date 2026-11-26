@@ -48,6 +48,10 @@ export interface RunRules {
   brake?: number;
   /** Extra pickup reach for scrap and fuel cans, metres. */
   magnet?: number;
+  /** The run ends well when the distance reaches this (a campaign leg), metres. */
+  goal?: number;
+  /** Tank level at the start, 0..1. */
+  startFuel?: number;
 }
 
 export const FREE_RULES: RunRules = { fuel: false, ram: 0, gun: 0, tank: 1 };
@@ -85,9 +89,11 @@ export interface WorldEvents {
   shotY: number;
   /** Picked up a fuel can this step. */
   fuel: boolean;
+  /** Reached the end of a campaign leg this step. */
+  arrived: boolean;
 }
 
-export type EndReason = 'wreck' | 'fuel';
+export type EndReason = 'wreck' | 'fuel' | 'arrived';
 
 /** All game logic for a run. No DOM or drawing, so it can be unit tested. */
 export class World {
@@ -95,7 +101,7 @@ export class World {
   readonly events: WorldEvents = {
     hit: false, crash: false, laneChange: 0, hitX: 0, hitY: 0,
     nearMiss: 0, nearMissPoints: 0, nearMissX: 0, nearMissY: 0, milestone: 0, coins: 0, bump: false,
-    rams: 0, ramX: 0, ramY: 0, shot: false, shotX: 0, shotY: 0, fuel: false,
+    rams: 0, ramX: 0, ramY: 0, shot: false, shotX: 0, shotY: 0, fuel: false, arrived: false,
   };
   rules: RunRules = FREE_RULES;
   /** Tank level 0..1 (Story Mode). */
@@ -203,7 +209,7 @@ export class World {
     this.alive = true;
     this.crashT = 0;
     this.bonus = this.combo = this.comboTimer = this.nearMisses = this.bestCombo = 0;
-    this.fuel = 1;
+    this.fuel = Math.max(0.05, Math.min(1, this.rules.startFuel ?? 1));
     this.ramWear = 0;
     this.kills = 0;
     this.gunT = 1.5;
@@ -219,7 +225,7 @@ export class World {
     const e = this.events;
     e.hit = e.crash = false;
     e.laneChange = e.nearMiss = e.nearMissPoints = e.milestone = e.coins = 0;
-    e.bump = e.shot = e.fuel = false;
+    e.bump = e.shot = e.fuel = e.arrived = false;
     e.rams = 0;
   }
 
@@ -264,6 +270,13 @@ export class World {
     this.throttleMul += Math.max(-dm * 1.6, Math.min(dm, want - this.throttleMul));
     this.speed = base * this.speedMul * this.throttleMul;
     this.dist += this.speed * dt;
+    if (this.rules.goal && this.dist >= this.rules.goal) {
+      // Made it to the end of the leg: brake to a stop.
+      this.alive = false;
+      this.endReason = 'arrived';
+      this.events.arrived = true;
+      return;
+    }
     if (this.rules.fuel) {
       this.fuel -= (this.speed * dt) / (B.fuelRange * this.rules.tank);
       if (this.fuel <= 0) {
@@ -302,6 +315,11 @@ export class World {
     while (this.nextRowY < this.dist + this.spawnAhead()) {
       const interval = rowIntervalAt(this.t);
       const ahead = this.nextRowY - this.dist;
+      // Clear road for the last stretch of a leg.
+      if (this.rules.goal && this.nextRowY > this.rules.goal - 25) {
+        this.nextRowY += interval * base;
+        continue;
+      }
       this.spawner.next(this.row, this.t, base, interval, ahead);
       for (let k = 0; k < this.row.count; k++) {
         const o = this.take();

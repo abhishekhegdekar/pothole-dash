@@ -1,5 +1,5 @@
 /** Versioned save data. Reads are validated; old versions are migrated, bad data is reset, never thrown. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 const KEY = 'pothole-dash.save';
 
 export type GraphicsQuality = 'high' | 'low';
@@ -34,6 +34,25 @@ export interface SaveData {
   upgrades: Record<string, number>;
   paint: string;
   weapons: string[];
+  campaign: CampaignSave;
+}
+
+/** Story campaign progress. `camp` is null until the camp is chosen; `node` indexes the play order. */
+export interface CampaignSave {
+  started: boolean;
+  camp: string | null;
+  node: number;
+  /** Tank level carried between drives. */
+  fuel: number;
+  /** Survivors riding along, and kind acts, for the gates and the ending. */
+  helpers: number;
+  kindness: number;
+  /** Endings seen, across playthroughs. */
+  endings: string[];
+}
+
+export function newCampaign(endings: string[] = []): CampaignSave {
+  return { started: false, camp: null, node: 0, fuel: 1, helpers: 0, kindness: 0, endings };
 }
 
 export interface StorageLike {
@@ -60,6 +79,7 @@ export function defaultSave(): SaveData {
     upgrades: {},
     paint: 'olive',
     weapons: ['bat'],
+    campaign: newCampaign(),
   };
 }
 
@@ -91,6 +111,8 @@ export function parseSave(raw: string | null): SaveData {
   }
   // v4 had no Story workshop.
   if (d.v === 4) d.v = 5;
+  // v5 had no campaign progress.
+  if (d.v === 5) d.v = 6;
   if (d.v !== SAVE_VERSION) return defaultSave();
 
   const def = defaultSave();
@@ -133,6 +155,22 @@ export function parseSave(raw: string | null): SaveData {
     upgrades,
     paint: typeof d.paint === 'string' && d.paint.length < 20 ? d.paint : def.paint,
     weapons: ids(d.weapons, def.weapons),
+    campaign: parseCampaign(d.campaign),
+  };
+}
+
+function parseCampaign(x: unknown): CampaignSave {
+  if (typeof x !== 'object' || x === null) return newCampaign();
+  const c = x as Record<string, unknown>;
+  const endings = Array.isArray(c.endings) ? c.endings.filter((e): e is string => typeof e === 'string' && e.length < 40).slice(0, 10) : [];
+  return {
+    started: c.started === true,
+    camp: c.camp === 'north' || c.camp === 'south' || c.camp === 'coast' ? c.camp : null,
+    node: Math.min(200, int(c.node)),
+    fuel: typeof c.fuel === 'number' && Number.isFinite(c.fuel) ? Math.min(1, Math.max(0, c.fuel)) : 1,
+    helpers: Math.min(5, int(c.helpers)),
+    kindness: Math.min(10, int(c.kindness)),
+    endings: [...new Set(endings)],
   };
 }
 
