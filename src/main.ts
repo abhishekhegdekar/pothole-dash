@@ -4,6 +4,8 @@ import { startLoop } from './core/loop';
 import { VEHICLES } from './data/vehicles';
 import { Sfx } from './audio/sfx';
 import { Renderer } from './render/renderer';
+import { Renderer3D } from './render3d/renderer3d';
+import type { GameRenderer } from './render/types';
 import { SaveStore } from './storage/save';
 import { World } from './systems/world';
 import { formatDistance } from './ui/format';
@@ -62,6 +64,21 @@ function boot(): void {
     btnResume: el('btnResume'),
     btnPause: el('btnPause'),
     btnMute: el('btnMute'),
+    settings: el('settings'),
+    btnStory: el('btnStory'),
+    btnGarage: el('btnGarage'),
+    btnSettings: el('btnSettings'),
+    btnSettingsDone: el('btnSettingsDone'),
+    btnVibe: el('btnVibe'),
+    btnGfxHigh: el('btnGfxHigh'),
+    btnGfxLow: el('btnGfxLow'),
+    btnQuit: el('btnQuit'),
+    btnMenu: el('btnMenu'),
+    menuNote: el('menuNote'),
+    walletCoins: el('walletCoins'),
+    walletPoints: el('walletPoints'),
+    overEarned: el('overEarned'),
+    speedfx: el('speedfx'),
   };
 
   const store = new SaveStore();
@@ -70,8 +87,17 @@ function boot(): void {
   sfx.muted = save.muted;
   const newSeed = (): number => (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
   const world = new World(VEHICLES.auto, newSeed());
-  const renderer = new Renderer(canvas, world);
-  const input = new Input(canvas);
+  let renderer: GameRenderer;
+  try {
+    renderer = new Renderer3D(canvas, world, save.settings.graphics);
+  } catch (err) {
+    // No WebGL: fall back to the flat 2D view so the game still runs.
+    console.warn('3D unavailable, using 2D', err);
+    const fresh = canvas.cloneNode() as HTMLCanvasElement;
+    canvas.replaceWith(fresh);
+    renderer = new Renderer(fresh, world);
+  }
+  const input = new Input(el<HTMLCanvasElement>('game'));
 
   let state: State = 'menu';
   let overReady = false;
@@ -83,6 +109,7 @@ function boot(): void {
   let countT = 0;
   let countBeat = -1;
   let bannerTimer = 0;
+  let shownFx = -1;
 
   /** Restarts a CSS animation on an element by toggling its class. */
   const replay = (node: HTMLElement, cls: string): void => {
@@ -96,15 +123,27 @@ function boot(): void {
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
 
-  const renderMute = (): void => {
-    ui.btnMute.textContent = sfx.muted ? 'Sound off' : 'Sound on';
-    ui.btnMute.setAttribute('aria-pressed', String(!sfx.muted));
+  const toggle = (b: HTMLElement, on: boolean): void => {
+    b.textContent = on ? 'On' : 'Off';
+    b.setAttribute('aria-pressed', String(on));
   };
-  renderMute();
-  ui.best.textContent = save.bestScore > 0 ? `Best score: ${save.bestScore.toLocaleString('en-IN')}` : 'Watch the road. It bites.';
+  const renderSettings = (): void => {
+    toggle(ui.btnMute, !sfx.muted);
+    toggle(ui.btnVibe, save.settings.vibration);
+    ui.btnGfxHigh.setAttribute('aria-pressed', String(save.settings.graphics === 'high'));
+    ui.btnGfxLow.setAttribute('aria-pressed', String(save.settings.graphics === 'low'));
+  };
+  const fmt = (n: number): string => n.toLocaleString('en-IN');
+  const renderWallet = (): void => {
+    ui.walletCoins.textContent = fmt(save.coins);
+    ui.walletPoints.textContent = fmt(save.points);
+    ui.best.textContent = save.bestScore > 0 ? `Best score ${fmt(save.bestScore)}` : 'Watch the road. It bites.';
+  };
+  renderSettings();
+  renderWallet();
 
   const show = (which: HTMLElement | null): void => {
-    for (const o of [ui.menu, ui.paused, ui.over]) o.hidden = o !== which;
+    for (const o of [ui.menu, ui.paused, ui.over, ui.settings]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
   };
 
@@ -167,6 +206,7 @@ function boot(): void {
     const isBest = score > save.bestScore;
     save.runs++;
     if (isBest) save.bestScore = score;
+    save.points += score;
     if (d > save.bestDistance) save.bestDistance = d;
     store.save(save);
     ui.overDist.textContent = formatDistance(d);
@@ -176,7 +216,8 @@ function boot(): void {
     ui.overBest.textContent = `Best score: ${save.bestScore.toLocaleString('en-IN')} · Best distance: ${formatDistance(save.bestDistance)}`;
     ui.overBadge.hidden = !isBest;
     ui.overTitle.textContent = isBest ? 'New record!' : 'Auto broke down!';
-    ui.best.textContent = `Best score: ${save.bestScore.toLocaleString('en-IN')}`;
+    ui.overEarned.textContent = score > 0 ? `+${fmt(score)} points for Story Mode` : '';
+    renderWallet();
     overTimer = window.setTimeout(() => {
       overReady = true;
       show(ui.over);
@@ -186,9 +227,6 @@ function boot(): void {
 
   // Buttons.
   ui.btnStart.addEventListener('click', start);
-  ui.menu.addEventListener('pointerdown', (e) => {
-    if (e.target === ui.menu) start();
-  });
   ui.btnAgain.addEventListener('click', () => overReady && start());
   ui.btnResume.addEventListener('click', resume);
   ui.paused.addEventListener('pointerdown', (e) => {
@@ -198,14 +236,52 @@ function boot(): void {
     e.stopPropagation();
     pause();
   });
-  ui.btnMute.addEventListener('click', (e) => {
-    e.stopPropagation();
+  ui.btnMute.addEventListener('click', () => {
     sfx.muted = !sfx.muted;
     save.muted = sfx.muted;
     store.save(save);
     sfx.unlock();
-    renderMute();
+    renderSettings();
   });
+  ui.btnVibe.addEventListener('click', () => {
+    save.settings.vibration = !save.settings.vibration;
+    store.save(save);
+    renderSettings();
+    if (save.settings.vibration) vibrate(30);
+  });
+  const setGfx = (q: 'high' | 'low'): void => {
+    save.settings.graphics = q;
+    store.save(save);
+    renderer.setQuality(q);
+    resize();
+    renderSettings();
+  };
+  ui.btnGfxHigh.addEventListener('click', () => setGfx('high'));
+  ui.btnGfxLow.addEventListener('click', () => setGfx('low'));
+  let noteTimer = 0;
+  const note = (text: string): void => {
+    ui.menuNote.textContent = text;
+    window.clearTimeout(noteTimer);
+    noteTimer = window.setTimeout(() => (ui.menuNote.textContent = ''), 2600);
+  };
+  ui.btnStory.addEventListener('click', () => note('Story Mode "500 km" arrives in a later step. Points you earn now carry over.'));
+  ui.btnGarage.addEventListener('click', () => note('The Garage opens in step 4. Keep your coins.'));
+  ui.btnSettings.addEventListener('click', () => show(ui.settings));
+  ui.btnSettingsDone.addEventListener('click', () => show(ui.menu));
+  const toMenu = (): void => {
+    window.clearTimeout(overTimer);
+    window.clearTimeout(bannerTimer);
+    ui.banner.hidden = true;
+    ui.count.hidden = true;
+    sfx.unlock();
+    world.reset(newSeed());
+    renderer.resetRun();
+    state = 'menu';
+    renderWallet();
+    show(ui.menu);
+  };
+  ui.btnQuit.addEventListener('click', toMenu);
+  ui.btnMenu.addEventListener('click', () => overReady && toMenu());
   const unlockOnce = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlockOnce, { once: true });
   window.addEventListener('keydown', unlockOnce, { once: true });
@@ -215,6 +291,15 @@ function boot(): void {
     if (document.hidden) pause();
   });
   window.addEventListener('blur', pause);
+
+  function vibrate(ms: number): void {
+    if (!save.settings.vibration) return;
+    try {
+      navigator.vibrate?.(ms);
+    } catch {
+      /* not supported */
+    }
+  }
 
   const onAction = (a: Action): void => {
     if (state === 'play') {
@@ -226,7 +311,7 @@ function boot(): void {
     } else if (state === 'paused') {
       if (a === Action.Pause || a === Action.Confirm) resume();
     } else if (state === 'menu') {
-      if (a === Action.Confirm) start();
+      if (a === Action.Confirm && ui.settings.hidden) start();
     } else if (state === 'over' && overReady && a === Action.Confirm) {
       start();
     }
@@ -272,11 +357,7 @@ function boot(): void {
           sfx.thud();
           renderer.popText('−1 dent', ev.hitX, ev.hitY + 1, '#ff7a63', 20);
         }
-        try {
-          navigator.vibrate?.(ev.crash ? 120 : 40);
-        } catch {
-          /* not supported */
-        }
+        vibrate(ev.crash ? 120 : 40);
       }
       if (ev.crash && state === 'play') gameOver();
       world.clearEvents();
@@ -290,7 +371,12 @@ function boot(): void {
 
   const render = (alpha: number, frameDt: number): void => {
     const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
-    renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play');
+    renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? 'menu' : 'game');
+    const fx = Math.round(renderer.speedFx * 100) / 100;
+    if (fx !== shownFx) {
+      shownFx = fx;
+      ui.speedfx.style.opacity = String(fx);
+    }
     const meters = Math.floor(world.dist);
     if (state !== 'menu' && state !== 'over' && meters !== shownMeters) {
       shownMeters = meters;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSave, parseSave, SaveStore, type StorageLike } from '../src/storage/save';
+import { defaultSave, parseSave, SaveStore, type SaveData, type StorageLike } from '../src/storage/save';
 
 class MemStorage implements StorageLike {
   data = new Map<string, string>();
@@ -19,26 +19,43 @@ class BrokenStorage implements StorageLike {
   }
 }
 
+const sample = (): SaveData => ({
+  ...defaultSave(),
+  bestDistance: 812.5,
+  bestScore: 990,
+  runs: 4,
+  muted: true,
+  coins: 120,
+  points: 4500,
+  scrap: 7,
+  settings: { vibration: false, graphics: 'low' },
+});
+
 describe('save', () => {
   it('round-trips valid data', () => {
     const s = new SaveStore(new MemStorage());
-    s.save({ v: 2, bestDistance: 812.5, bestScore: 990, runs: 4, muted: true });
-    expect(s.load()).toEqual({ v: 2, bestDistance: 812.5, bestScore: 990, runs: 4, muted: true });
+    s.save(sample());
+    expect(s.load()).toEqual(sample());
   });
   it('migrates a version 1 save', () => {
     expect(parseSave('{"v":1,"bestDistance":640.4,"runs":3,"muted":true}')).toEqual({
-      v: 2, bestDistance: 640.4, bestScore: 640, runs: 3, muted: true,
+      ...defaultSave(), bestDistance: 640.4, bestScore: 640, runs: 3, muted: true,
+    });
+  });
+  it('migrates a version 2 save, keeping progress and starting an empty wallet', () => {
+    expect(parseSave('{"v":2,"bestDistance":300,"bestScore":410,"runs":9,"muted":false}')).toEqual({
+      ...defaultSave(), bestDistance: 300, bestScore: 410, runs: 9,
     });
   });
   it('resets corrupted or unknown data without throwing', () => {
     expect(parseSave('{not json')).toEqual(defaultSave());
     expect(parseSave('null')).toEqual(defaultSave());
     expect(parseSave('{"v":99,"bestDistance":5}')).toEqual(defaultSave());
-    expect(parseSave('{"v":2,"bestDistance":-3,"bestScore":"x","runs":"x"}')).toEqual(defaultSave());
+    expect(parseSave('{"v":3,"bestDistance":-3,"coins":"x","settings":"bad"}')).toEqual(defaultSave());
   });
   it('keeps working in memory when storage is blocked', () => {
     const s = new SaveStore(new BrokenStorage());
-    s.save({ v: 2, bestDistance: 100, bestScore: 100, runs: 1, muted: false });
+    s.save({ ...defaultSave(), bestDistance: 100 });
     expect(s.load().bestDistance).toBe(100);
   });
 });

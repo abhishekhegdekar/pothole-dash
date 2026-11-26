@@ -1,6 +1,13 @@
-/** Versioned save data. Reads are validated; bad or old data is migrated or reset, never thrown. */
-export const SAVE_VERSION = 2;
+/** Versioned save data. Reads are validated; old versions are migrated, bad data is reset, never thrown. */
+export const SAVE_VERSION = 3;
 const KEY = 'pothole-dash.save';
+
+export type GraphicsQuality = 'high' | 'low';
+
+export interface Settings {
+  vibration: boolean;
+  graphics: GraphicsQuality;
+}
 
 export interface SaveData {
   v: typeof SAVE_VERSION;
@@ -8,6 +15,11 @@ export interface SaveData {
   bestScore: number;
   runs: number;
   muted: boolean;
+  /** Wallet. Coins buy Free Run vehicles and maps; points buy Story upgrades; scrap is found in Story. */
+  coins: number;
+  points: number;
+  scrap: number;
+  settings: Settings;
 }
 
 export interface StorageLike {
@@ -16,10 +28,21 @@ export interface StorageLike {
 }
 
 export function defaultSave(): SaveData {
-  return { v: SAVE_VERSION, bestDistance: 0, bestScore: 0, runs: 0, muted: false };
+  return {
+    v: SAVE_VERSION,
+    bestDistance: 0,
+    bestScore: 0,
+    runs: 0,
+    muted: false,
+    coins: 0,
+    points: 0,
+    scrap: 0,
+    settings: { vibration: true, graphics: 'high' },
+  };
 }
 
 const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : 0);
+const int = (x: unknown): number => Math.floor(num(x));
 
 export function parseSave(raw: string | null): SaveData {
   if (!raw) return defaultSave();
@@ -31,15 +54,28 @@ export function parseSave(raw: string | null): SaveData {
   }
   if (typeof data !== 'object' || data === null) return defaultSave();
   const d = data as Record<string, unknown>;
-  // Version 1 had no score; the best distance is the best score it could have had.
-  if (d.v === 1) d.bestScore = d.bestDistance;
-  else if (d.v !== SAVE_VERSION) return defaultSave();
+  // Migrations, oldest first. v1 had no score; v2 had no wallet or settings.
+  if (d.v === 1) {
+    d.bestScore = d.bestDistance;
+    d.v = 2;
+  }
+  if (d.v === 2) d.v = 3;
+  if (d.v !== SAVE_VERSION) return defaultSave();
+
+  const s = (typeof d.settings === 'object' && d.settings !== null ? d.settings : {}) as Record<string, unknown>;
   return {
     v: SAVE_VERSION,
     bestDistance: num(d.bestDistance),
-    bestScore: Math.floor(num(d.bestScore)),
-    runs: Math.floor(num(d.runs)),
+    bestScore: int(d.bestScore),
+    runs: int(d.runs),
     muted: d.muted === true,
+    coins: int(d.coins),
+    points: int(d.points),
+    scrap: int(d.scrap),
+    settings: {
+      vibration: s.vibration !== false,
+      graphics: s.graphics === 'low' ? 'low' : 'high',
+    },
   };
 }
 
