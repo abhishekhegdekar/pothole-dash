@@ -115,6 +115,7 @@ export class Foot3D {
     const b = new GeoBuilder();
     const g = new GeoBuilder();
     this.genAt = null;
+    if (this.rig) this.rig.visible = false;
     const layout = fw.level.layout;
     const indoor = layout === 'mall' || layout === 'apartment';
     this.buildFloor(b, g, W, D);
@@ -145,7 +146,7 @@ export class Foot3D {
       layout === 'mall' ? [[-W / 4, 8, '#dfe6ff', 14], [W / 4, 15, '#dfe6ff', 14], [-W / 4, 22, '#dfe6ff', 14], [W / 4, 29, '#dfe6ff', 14]]
       : layout === 'apartment' ? [[0, 3, '#ffe2b0', 12], [-W / 3, 9, '#dfe6ff', 8], [W / 3, 16, '#dfe6ff', 8], [0, 26, '#dfe6ff', 13]]
       : layout === 'pump' ? [[-6, 11, '#f4f8ff', 16], [6, 11, '#f4f8ff', 16], [-5, 21, '#ffd9a0', 10], [6, 25, '#ffd9a0', 6]]
-      : [[-W / 2 + 4, 14, '#ff9a40', 14], [W / 2 - 5, 24, '#ff9a40', 14], [0, 4, '#ffd9a0', 10], [-3, 28, '#ff9a40', 10]];
+      : [[-W / 2 + 4, 14, '#ff9a40', 22], [W / 2 - 5, 24, '#ff9a40', 22], [0, 4, '#ffd9a0', 16], [-3, 28, '#ff9a40', 18]];
     for (const [x, y, col, i] of lights) {
       const l = new THREE.PointLight(col, i, indoor ? 11 : 13, 1.4);
       l.position.set(x, indoor ? 3.6 : 3.2, -y);
@@ -281,19 +282,20 @@ export class Foot3D {
     fence(-W / 2, 0, -W / 2, -D);
     fence(W / 2, 0, W / 2, -D);
     fence(-W / 2, -D, W / 2, -D);
-    // Camp wall and the steel gate behind the exit.
-    for (const s of [-1, 1]) {
-      b.box(W / 2 - 2.5, 3.2, 0.6, s * (W / 4 + 1.25), 1.6, 0.6, '#8d8676');
-      b.box(1.4, 6.5, 1.4, s * 3.2, 3.25, 0.7, '#7d7666');
-      b.box(2.2, 0.3, 2.2, s * 3.2, 6.6, 0.7, '#5a5448');
-      // Floodlights on the towers: dark until the generator runs.
-      b.box(0.6, 0.4, 0.3, s * 3.2, 7.0, 0.1, '#2a2a2e');
+    // Camp wall and the steel gate behind the exit, kept low so the camera sees over them.
+    for (const sx of [-1, 1]) {
+      b.box(W / 2 - 2.5, 1.4, 0.6, sx * (W / 4 + 1.25), 0.7, 0.6, '#8d8676');
+      b.box(1.2, 1.9, 1.2, sx * 3.0, 0.95, 0.7, '#7d7666');
     }
-    b.box(4.6, 3.0, 0.2, 0, 1.5, 0.75, '#5a6a56');
-    for (let x = -2; x <= 2; x += 0.5) b.box(0.06, 3.0, 0.24, x, 1.5, 0.72, '#3e4a3c');
-    b.box(4.8, 0.5, 0.5, 0, 3.3, 0.7, '#3e4a3c');
+    b.box(4.6, 1.3, 0.2, 0, 0.65, 0.75, '#5a6a56');
+    for (let x = -2; x <= 2; x += 0.5) b.box(0.06, 1.3, 0.24, x, 0.65, 0.72, '#3e4a3c');
+    // Floodlight masts at the back corners: dark until the generator runs.
+    for (const sx of [-1, 1]) {
+      b.box(0.3, 7, 0.3, sx * (W / 2 - 1), 3.5, -D + 1, '#5a5448');
+      b.box(1.2, 0.5, 0.4, sx * (W / 2 - 1), 7.1, -D + 1.2, '#2a2a2e');
+    }
     // Barbed wire coil on top of the wall.
-    for (let x = -W / 2 + 1; x < W / 2 - 1; x += 0.7) if (Math.abs(x) > 2.6) b.box(0.5, 0.18, 0.5, x, 3.3, 0.6, '#9aa0a6', 0, x, 0.5);
+    for (let x = -W / 2 + 1; x < W / 2 - 1; x += 0.7) if (Math.abs(x) > 2.6) b.box(0.5, 0.18, 0.5, x, 1.5, 0.6, '#9aa0a6', 0, x, 0.5);
     this.parkedRig(b, -W / 2 + 4.5, -3.5);
     // Oil drums with fires in them, the only light in the yard.
     for (const [x, y] of [[-W / 2 + 4, 14], [W / 2 - 5, 24], [-3, 28]] as Array<[number, number]>) {
@@ -305,11 +307,19 @@ export class Foot3D {
   }
 
   /** Raj's SUV parked at the edge, with the family inside. */
-  private parkedRig(b: GeoBuilder, x: number, z: number): void {
-    const geo = playerVehicleGeo('rig', this.paint);
-    geo.rotateY(Math.PI / 2);
-    b.add(geo, '#ffffff', x, 0, z);
+  private parkedRig(_b: GeoBuilder, x: number, z: number): void {
+    if (this.rig) {
+      this.scene.remove(this.rig);
+      this.rig.geometry.dispose();
+    }
+    this.rig = new THREE.Mesh(playerVehicleGeo('rig', this.paint), this.mat);
+    this.rig.rotation.y = Math.PI / 2;
+    this.rig.position.set(x, 0, z);
+    this.rig.castShadow = true;
+    this.scene.add(this.rig);
   }
+
+  private rig: THREE.Mesh | null = null;
 
   paint: string | undefined;
 

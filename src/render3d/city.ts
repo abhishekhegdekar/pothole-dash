@@ -665,11 +665,13 @@ function buildOpenRoad(style: CityStyle, seed: number, roadW: number): BlockGeom
         const x0 = edge + rng.range(0.2, 1.2);
         const h = rng.range(7, 16);
         const cz = -(z + len / 2);
-        b.box(5, h, len + 0.2, side * (x0 + 2.5), h / 2, cz, pick(rng, ['#4a4640', '#57514a', '#3f3c38', '#5e5850']));
+        b.box(5, h, len + 0.2, side * (x0 + 2.5), h / 2, cz, pick(rng, ['#7a7064', '#857a6c', '#6e665c', '#8f8474']));
         b.box(5.4, 0.5, len, side * (x0 + 2.6), h + 0.1, cz, pick(rng, ['#3f6a34', '#4f7a3a', '#5a7f40']));
         const ledge = rng.range(2, h - 2);
         b.box(0.6, 0.35, len, side * (x0 - 0.1), ledge, cz, '#4f7a3a');
-        b.box(8, h + rng.range(6, 14), len + 0.2, side * (x0 + 9), (h + 8) / 2, cz, pick(rng, ['#3f3c38', '#4a4640']));
+        b.box(8, h + rng.range(6, 14), len + 0.2, side * (x0 + 9), (h + 8) / 2, cz, pick(rng, ['#6e665c', '#7a7064']));
+        // Grass and shrubs on the rock face.
+        if (rng.chance(0.7)) b.blob(rng.range(0.6, 1.2), side * (x0 + 0.2), rng.range(1.5, h - 1), cz, pick(rng, ['#4f7a3a', '#5f8a40', '#3f6a34']), 0.7);
         z += len;
       }
       // A monsoon waterfall down the rock.
