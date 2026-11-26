@@ -15,6 +15,8 @@ const GLASS = '#2f4458';
 const HEAD = '#fff3c4';
 const TAIL = '#d8321f';
 
+const CHROME_P = '#c9ced4';
+
 function wheel(b: GeoBuilder, x: number, y: number, z: number, r: number, w: number): void {
   b.add(new THREE.CylinderGeometry(r, r, w, 12), TYRE, x, y, z, 0, 0, Math.PI / 2);
   b.add(new THREE.CylinderGeometry(r * 0.5, r * 0.5, w + 0.02, 8), HUB, x, y, z, 0, 0, Math.PI / 2);
@@ -495,35 +497,63 @@ export function playerVehicleGeo(id: string, paint?: string): THREE.BufferGeomet
   const b = new GeoBuilder();
   switch (id) {
     case 'scooter': {
+      // Step-through scooter: rounded side panels, a floorboard, apron and handlebar cowl.
       wheel(b, 0, 0.26, -0.62, 0.26, 0.12);
       wheel(b, 0, 0.26, 0.58, 0.26, 0.14);
-      b.box(0.5, 0.42, 0.9, 0, 0.55, 0.25, '#3fa7c9');
-      b.box(0.44, 0.12, 0.6, 0, 0.83, 0.28, '#1c1c20');
-      b.box(0.36, 0.7, 0.2, 0, 0.7, -0.5, '#3fa7c9', 0.25);
-      b.box(0.62, 0.05, 0.05, 0, 1.12, -0.58, '#2a2a2e');
-      b.box(0.18, 0.12, 0.06, 0, 0.98, -0.66, HEAD);
-      b.box(0.2, 0.1, 0.05, 0, 0.62, 0.72, TAIL);
-      // Rider in a white kurta and a red helmet.
-      b.box(0.42, 0.6, 0.3, 0, 1.22, 0.15, '#f4f0e6', -0.15);
-      b.box(0.36, 0.3, 0.5, 0, 0.92, 0.05, '#2c3140');
-      for (const s of [-1, 1]) b.box(0.1, 0.1, 0.5, s * 0.24, 1.25, -0.25, '#f4f0e6', 0.6);
-      b.blob(0.2, 0, 1.7, 0.1, '#c8281f', 1.05);
+      roundedBox(b, 0.52, 0.42, 0.82, 0, 0.56, 0.3, '#3fa7c9', 0.16);
+      b.box(0.36, 0.06, 0.5, 0, 0.36, -0.2, '#2a2a2e');
+      roundedBox(b, 0.44, 0.74, 0.18, 0, 0.72, -0.52, '#3fa7c9', 0.08);
+      roundedBox(b, 0.46, 0.13, 0.62, 0, 0.83, 0.3, '#1c1c20', 0.06);
+      b.box(0.08, 0.06, 0.4, 0, 0.6, 0.62, CHROME_P);
+      roundedBox(b, 0.3, 0.16, 0.16, 0, 1.06, -0.6, '#3fa7c9', 0.06);
+      b.box(0.64, 0.04, 0.04, 0, 1.12, -0.58, '#2a2a2e');
+      for (const sx of [-1, 1]) {
+        b.box(0.04, 0.16, 0.04, sx * 0.24, 1.22, -0.6, '#2a2a2e');
+        b.box(0.1, 0.06, 0.03, sx * 0.26, 1.31, -0.6, '#9aa2aa');
+      }
+      b.box(0.18, 0.12, 0.05, 0, 1.06, -0.69, HEAD);
+      b.box(0.24, 0.08, 0.05, 0, 0.66, 0.72, TAIL);
+      b.add(new THREE.CylinderGeometry(0.04, 0.05, 0.4, 6), '#55585e', 0.18, 0.32, 0.45, Math.PI / 2, 0, 0);
+      // Rider in a white kurta and a red helmet, feet on the board, hands on the bars.
+      b.box(0.4, 0.58, 0.28, 0, 1.22, 0.18, '#f4f0e6', -0.15);
+      b.box(0.36, 0.28, 0.46, 0, 0.92, 0.08, '#2c3140');
+      for (const sx of [-1, 1]) {
+        b.box(0.12, 0.38, 0.13, sx * 0.13, 0.6, -0.16, '#2c3140', 0.35);
+        b.box(0.12, 0.08, 0.2, sx * 0.13, 0.42, -0.24, '#3a2a20');
+        b.box(0.1, 0.1, 0.46, sx * 0.23, 1.26, -0.26, '#f4f0e6', 0.55);
+        b.box(0.09, 0.09, 0.09, sx * 0.24, 1.18, -0.52, '#8a5a3c');
+      }
+      b.blob(0.2, 0, 1.7, 0.12, '#c8281f', 1.05);
+      b.box(0.3, 0.1, 0.04, 0, 1.68, -0.08, '#2a3e52');
       break;
     }
     case 'bike':
       motorbike(b, -1, '#2b4a8a', '#b8262b', null);
       break;
     case 'sportsbike': {
-      wheel(b, 0, 0.32, -0.75, 0.32, 0.16);
-      wheel(b, 0, 0.32, 0.7, 0.32, 0.2);
-      b.box(0.38, 0.4, 1.3, 0, 0.66, -0.05, '#22a35a');
-      b.box(0.42, 0.3, 0.6, 0, 0.78, -0.55, '#22a35a', -0.4);
-      b.box(0.3, 0.2, 0.04, 0, 1.02, -0.72, GLASS, -0.7);
-      b.box(0.3, 0.12, 0.6, 0, 0.92, 0.35, '#1c1c20', 0.15);
-      b.box(0.16, 0.1, 0.05, 0, 0.82, -0.88, HEAD);
-      b.box(0.16, 0.08, 0.05, 0, 0.95, 0.68, TAIL);
-      b.box(0.4, 0.5, 0.55, 0, 1.15, -0.05, '#111114', -0.9);
-      b.blob(0.2, 0, 1.38, -0.35, '#f2c230', 1.0);
+      // Faired sports bike: low nose, tank, tail hump, rider tucked in.
+      wheel(b, 0, 0.32, -0.76, 0.32, 0.16);
+      wheel(b, 0, 0.32, 0.72, 0.32, 0.22);
+      b.box(0.06, 0.06, 0.5, 0, 0.42, 0.45, '#55585e', 0.3);
+      roundedBox(b, 0.42, 0.42, 1.0, 0, 0.62, -0.15, '#22a35a', 0.14);
+      roundedBox(b, 0.44, 0.32, 0.56, 0, 0.8, -0.6, '#22a35a', 0.12);
+      b.box(0.3, 0.2, 0.04, 0, 1.04, -0.76, GLASS, -0.7);
+      roundedBox(b, 0.4, 0.22, 0.42, 0, 0.96, -0.2, '#1c8a4a', 0.1);
+      roundedBox(b, 0.3, 0.14, 0.5, 0, 0.92, 0.34, '#1c1c20', 0.06);
+      roundedBox(b, 0.3, 0.18, 0.36, 0, 0.96, 0.6, '#22a35a', 0.08);
+      b.box(0.36, 0.06, 0.6, 0, 0.5, -0.1, '#e8e4d8');
+      for (const sx of [-1, 1]) b.box(0.12, 0.08, 0.05, sx * 0.09, 0.84, -0.9, HEAD);
+      b.box(0.18, 0.06, 0.05, 0, 1.0, 0.79, TAIL);
+      b.add(new THREE.CylinderGeometry(0.06, 0.07, 0.5, 8), CHROME_P, 0.16, 0.58, 0.45, Math.PI / 2 - 0.25, 0, 0);
+      // Rider tucked in, black leathers, yellow helmet.
+      b.box(0.38, 0.5, 0.5, 0, 1.18, 0.02, '#111114', -0.95);
+      b.box(0.36, 0.22, 0.4, 0, 1.02, 0.28, '#111114');
+      for (const sx of [-1, 1]) {
+        b.box(0.12, 0.12, 0.42, sx * 0.2, 1.06, -0.32, '#111114', 0.35);
+        b.box(0.12, 0.34, 0.14, sx * 0.17, 0.8, 0.36, '#111114', -0.6);
+      }
+      b.blob(0.2, 0, 1.36, -0.36, '#f2c230', 1.0);
+      b.box(0.28, 0.1, 0.04, 0, 1.36, -0.55, '#1c1c20');
       break;
     }
     case 'hatch':

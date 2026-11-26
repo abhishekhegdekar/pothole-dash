@@ -3,6 +3,7 @@ import { Rng } from '../core/rng';
 import type { CityStyle } from '../data/maps';
 import { GeoBuilder } from './geo';
 import { parkedTaxi } from './props';
+import { roundedBox } from './cars';
 
 /** Length of one street block along the road, metres. Lane dashes repeat every 6 m, so this is a multiple of 6. */
 export const CHUNK_M = 24;
@@ -34,6 +35,7 @@ export function buildBlock(style: CityStyle, seed: number, roadW: number, signCe
   };
   const pools: number[] = [];
   const rng = new Rng(seed);
+  if (style.terrain !== 'city') return buildOpenRoad(style, seed, roadW);
   const pick = <T>(arr: T[]): T => arr[rng.int(0, arr.length)]!;
   const half = roadW / 2;
   const lotX = half + CURB_W + WALK_W;
@@ -599,4 +601,231 @@ function streetFurniture(b: GeoBuilder, glow: GeoBuilder, rng: Rng, kind: 'india
     }
   }
   void side;
+}
+
+/** A leaning coconut palm. */
+function palm(b: GeoBuilder, rng: Rng, x: number, z: number, lean: number): void {
+  const h = rng.range(6, 9);
+  const trunk = new THREE.CylinderGeometry(0.14, 0.22, h, 6);
+  trunk.translate(0, h / 2, 0);
+  trunk.rotateZ(lean);
+  b.add(trunk, '#7a6248', x, 0, z);
+  const tx = x - Math.sin(lean) * h;
+  const ty = Math.cos(lean) * h;
+  b.sway = 1;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + rng.range(0, 0.4);
+    b.box(2.6, 0.06, 0.5, tx + Math.cos(a) * 1.2, ty - 0.35, z + Math.sin(a) * 1.2, i % 2 ? '#3f7d3a' : '#4f9444', 0, -a, -0.45);
+  }
+  b.sway = 0;
+  b.blob(0.3, tx, ty - 0.2, z, '#6b4a2f');
+}
+
+/** A big shady roadside tree. */
+function bigTree(b: GeoBuilder, rng: Rng, style: CityStyle, x: number, z: number, side: number): void {
+  b.cylinder(0.3, 3.6, x, 1.8, z, style.trunk, 7);
+  b.sway = 1;
+  b.blob(2.4, x, 5.0, z, pick(rng, style.leaf), 0.6);
+  b.blob(1.7, x - side * 1.2, 5.4, z + 1, pick(rng, style.leaf), 0.65);
+  b.sway = 0;
+}
+
+/**
+ * Open road outside the city. Highway: shoulders, fields, neem trees, dhabas and kilometre
+ * stones. Ghat: a basalt cliff with waterfalls on the left and a parapet over the valley on
+ * the right. Coast: beach, sea and palms on the left, Konkan houses on the right.
+ */
+function buildOpenRoad(style: CityStyle, seed: number, roadW: number): BlockGeometry {
+  const b = new GeoBuilder();
+  const glow = new GeoBuilder();
+  const rng = new Rng(seed);
+  const pools: number[] = [];
+  const half = roadW / 2;
+  const t = style.terrain;
+  const SH = 2.2;
+  const edge = half + CURB_W + SH;
+  const night = style.litRate > 0.3;
+
+  for (const side of [-1, 1] as const) {
+    // Edge line, black and white kerb stones, and a dusty shoulder.
+    for (let z = 0; z < CHUNK_M; z++) {
+      b.box(CURB_W, 0.16, 1, side * (half + CURB_W / 2), 0.08, -z - 0.5, z % 2 === 0 ? (t === 'ghat' ? style.curbA : '#e8e4d8') : '#1c1c1f');
+    }
+    b.box(SH, 0.06, CHUNK_M, side * (half + CURB_W + SH / 2), 0.03, -CHUNK_M / 2, style.footpath);
+
+    const valley = t === 'ghat' && side === 1;
+    const cliff = t === 'ghat' && side === -1;
+    const sea = t === 'coast' && side === -1;
+
+    if (cliff) {
+      // Basalt cliff in steps, with moss on the ledges.
+      let z = 0;
+      while (z < CHUNK_M) {
+        const len = Math.min(CHUNK_M - z, rng.range(2.5, 5));
+        const x0 = edge + rng.range(0.2, 1.2);
+        const h = rng.range(7, 16);
+        const cz = -(z + len / 2);
+        b.box(5, h, len + 0.2, side * (x0 + 2.5), h / 2, cz, pick(rng, ['#7a7064', '#857a6c', '#6e665c', '#8f8474']));
+        b.box(5.4, 0.5, len, side * (x0 + 2.6), h + 0.1, cz, pick(rng, ['#3f6a34', '#4f7a3a', '#5a7f40']));
+        const ledge = rng.range(2, h - 2);
+        b.box(0.6, 0.35, len, side * (x0 - 0.1), ledge, cz, '#4f7a3a');
+        b.box(8, h + rng.range(6, 14), len + 0.2, side * (x0 + 9), (h + 8) / 2, cz, pick(rng, ['#6e665c', '#7a7064']));
+        // Grass and shrubs on the rock face.
+        if (rng.chance(0.7)) b.blob(rng.range(0.6, 1.2), side * (x0 + 0.2), rng.range(1.5, h - 1), cz, pick(rng, ['#4f7a3a', '#5f8a40', '#3f6a34']), 0.7);
+        z += len;
+      }
+      // A monsoon waterfall down the rock.
+      if (rng.chance(0.4)) {
+        const wz = -rng.range(4, CHUNK_M - 4);
+        const wh = 14;
+        b.box(0.15, wh, 0.9, side * (edge + 0.3), wh / 2, wz, '#d9eaf2');
+        b.box(0.1, wh, 0.4, side * (edge + 0.22), wh / 2, wz + 0.2, '#f2f8fb');
+        b.blob(0.8, side * (edge + 0.2), 0.3, wz, '#e8f2f6', 0.4);
+        // Drain across the shoulder.
+        b.box(SH, 0.02, 0.8, side * (half + CURB_W + SH / 2), 0.065, wz, '#7f9aa6');
+      }
+      // A little roadside shrine painted orange.
+      if (rng.chance(0.15)) {
+        const sz = -rng.range(3, CHUNK_M - 3);
+        b.box(0.9, 0.9, 0.9, side * (edge - 0.5), 0.45, sz, '#e8702a');
+        b.box(1.1, 0.12, 1.1, side * (edge - 0.5), 0.95, sz, '#c9c1ad');
+      }
+      continue;
+    }
+
+    if (valley) {
+      // Parapet over the drop: white and black blocks, broken in places.
+      const gapAt = rng.chance(0.2) ? rng.range(3, CHUNK_M - 6) : -10;
+      for (let z = 0; z < CHUNK_M; z += 1.5) {
+        if (z > gapAt && z < gapAt + 4) {
+          if (rng.chance(0.5)) b.box(0.4, 0.3, 1.2, side * (edge + 0.4), 0.15, -z - 0.75, '#8f8a80', 0.3, 0.4, 0.2);
+          continue;
+        }
+        b.box(0.4, 0.7, 1.2, side * (edge + 0.2), 0.35, -z - 0.75, Math.floor(z / 1.5) % 2 ? '#e8e4d8' : '#1c1c1f');
+      }
+      // Bonnet monkeys sitting on the wall.
+      if (rng.chance(0.35)) {
+        const mz = -rng.range(2, CHUNK_M - 2);
+        const mx = side * (edge + 0.2);
+        b.box(0.28, 0.32, 0.22, mx, 0.86, mz, '#8a7a68');
+        b.box(0.2, 0.2, 0.2, mx, 1.12, mz + 0.04, '#9a8a76');
+        b.box(0.12, 0.1, 0.03, mx - side * 0.1, 1.12, mz + 0.15, '#d9a88a');
+        b.box(0.04, 0.04, 0.4, mx + side * 0.05, 0.8, mz - 0.3, '#8a7a68', 0.5, 0, 0);
+      }
+      // A slope falling away, then the valley far below with trees and fields.
+      b.box(6, 0.4, CHUNK_M, side * (edge + 3.4), -1.5, -CHUNK_M / 2, '#5a6a40', 0, 0, side * 0.5);
+      b.box(140, 0.1, CHUNK_M, side * (edge + 74), -26, -CHUNK_M / 2, pick(rng, ['#4f6a3a', '#56703e', '#5f7a44']));
+      for (let i = 0; i < 6; i++) {
+        b.blob(rng.range(2, 4), side * (edge + rng.range(10, 60)), -25, -rng.range(0, CHUNK_M), pick(rng, style.leaf), 0.8);
+      }
+      if (rng.chance(0.5)) {
+        const hx = side * (edge + rng.range(70, 110));
+        const hh = rng.range(30, 50);
+        b.cylinder(rng.range(20, 30), hh, hx, -26 + hh / 2, -rng.range(4, 20), pick(rng, ['#4f6040', '#56664a', '#4a5a3e']), 7, rng.range(3, 8));
+      }
+      continue;
+    }
+
+    if (sea) {
+      // Beach, the sea and a boat pulled up on the sand.
+      b.box(7, 0.04, CHUNK_M, side * (edge + 3.5), -0.02, -CHUNK_M / 2, '#dcc794');
+      b.box(120, 0.02, CHUNK_M, side * (edge + 67), -0.3, -CHUNK_M / 2, '#3f7f9a');
+      for (let i = 0; i < 3; i++) b.box(0.4, 0.03, CHUNK_M, side * (edge + 7.5 + i * 1.4 + rng.range(0, 0.6)), -0.26, -CHUNK_M / 2, '#8cc2d4');
+      if (rng.chance(0.35)) {
+        const bz = -rng.range(4, CHUNK_M - 4);
+        const col = pick(rng, ['#2e6fb7', '#d8432f', '#f2c230', '#2f9e74']);
+        roundedBox(b, 1.4, 0.6, 4.2, side * (edge + 4.5), 0.3, bz, col, 0.25);
+        b.box(0.06, 2.4, 0.06, side * (edge + 4.5), 1.6, bz, '#6b4a2f');
+      }
+      for (let z = rng.range(2, 6); z < CHUNK_M - 1; z += rng.range(5, 9)) palm(b, rng, side * (edge + rng.range(0.8, 2.5)), -z, side * rng.range(0.1, 0.3));
+      continue;
+    }
+
+    // Fields behind the shoulder, in strips.
+    const fieldCol = pick(rng, t === 'coast' ? ['#4f7f3a', '#5f8a40'] : ['#6f8f3e', '#b08a4a', '#7f9a46', '#a08050']);
+    b.box(60, 0.03, CHUNK_M, side * (edge + 30), -0.01, -CHUNK_M / 2, fieldCol);
+    for (let i = 0; i < 8; i++) b.box(0.25, 0.04, CHUNK_M, side * (edge + 3 + i * 2.2), 0.01, -CHUNK_M / 2, '#5f6f38');
+
+    if (t === 'coast') {
+      // Konkan house: laterite walls and a red tiled roof, a mango tree beside it.
+      if (rng.chance(0.55)) {
+        const hz = -rng.range(5, CHUNK_M - 5);
+        const hx = side * (edge + rng.range(5, 8));
+        b.box(5, 2.6, 6, hx, 1.3, hz, pick(rng, ['#b0603f', '#a8553a', '#c9b48a']));
+        b.cylinder(4.6, 1.8, hx, 3.5, hz, '#8a3a2a', 4, 0.1);
+        b.box(0.05, 1.8, 1.0, hx - side * 2.52, 0.9, hz, '#5a3f2a');
+        if (night && rng.chance(0.6)) glow.box(0.05, 0.8, 0.8, hx - side * 2.53, 1.5, hz + 1.8, '#ffd98a');
+        else b.box(0.05, 0.8, 0.8, hx - side * 2.52, 1.5, hz + 1.8, '#2d3a4a');
+      }
+      for (let z = rng.range(2, 6); z < CHUNK_M - 1; z += rng.range(6, 10)) {
+        if (rng.chance(0.5)) palm(b, rng, side * (edge + rng.range(1, 3)), -z, -side * rng.range(0.05, 0.2));
+        else bigTree(b, rng, style, side * (edge + rng.range(1.5, 3)), -z, side);
+      }
+    } else {
+      // Neem trees along the highway, trunks painted white and red.
+      for (let z = rng.range(2, 8); z < CHUNK_M - 1; z += rng.range(8, 14)) {
+        const tx = side * (edge + 0.9);
+        bigTree(b, rng, style, tx, -z, side);
+        b.cylinder(0.32, 0.6, tx, 0.3, -z, '#e8e4d8', 7);
+        b.cylinder(0.32, 0.2, tx, 0.7, -z, '#c0392b', 7);
+      }
+      // Dhaba: a tin-roofed shed, cots out front, a truck parked beside.
+      if (rng.chance(0.22)) {
+        const dz = -rng.range(7, CHUNK_M - 7);
+        const dx = side * (edge + 5);
+        b.box(5, 2.5, 7, dx, 1.25, dz, pick(rng, ['#e6d6b0', '#d9a48f', '#9fd3c7']));
+        b.box(6.5, 0.12, 8.5, dx - side * 0.6, 2.8, dz, '#9aa0a6', 0, 0, side * 0.12);
+        b.box(5.2, 0.9, 0.12, dx - side * 0.2, 3.4, dz + 3.6, pick(rng, ['#d8432f', '#1f8a4f', '#f0a020']));
+        for (const cz of [-2, 0, 2]) {
+          b.box(1.0, 0.1, 1.9, dx - side * 3.4, 0.45, dz + cz, '#c9a46a');
+          for (const k of [-1, 1]) for (const m of [-1, 1]) b.box(0.08, 0.45, 0.08, dx - side * 3.4 + k * 0.45, 0.22, dz + cz + m * 0.9, '#5a3f2a');
+        }
+        if (night) {
+          for (let i = 0; i < 8; i++) glow.box(0.12, 0.12, 0.12, dx - side * 2.6, 2.6, dz - 3.5 + i, pick(rng, ['#ff4f4f', '#4fd6ff', '#ffd23f', '#6bff9a']));
+          pools.push(dx - side * 3.4, dz, 4, 0);
+        }
+      }
+      // Kilometre stone: white with a yellow cap.
+      if (side === 1) {
+        const mz = -rng.range(2, CHUNK_M - 2);
+        b.box(0.55, 0.55, 0.22, side * (half + CURB_W + 0.7), 0.3, mz, '#f2efe6');
+        b.cylinder(0.275, 0.22, side * (half + CURB_W + 0.7), 0.66, mz, '#f2c230', 10);
+      }
+      // Power line on the left.
+      if (side === -1) {
+        const px = side * (edge + 2.5);
+        b.cylinder(0.13, 8, px, 4, -10, '#8f8a80', 6, 0.1);
+        b.box(0.12, 0.12, 1.6, px, 7.6, -10, '#4a4640', 0, Math.PI / 2, 0);
+        for (const off of [-0.65, 0, 0.65]) b.box(0.025, 0.025, CHUNK_M, px + off, 7.5, -CHUNK_M / 2, '#1c1c1f');
+      }
+    }
+  }
+
+  if (t === 'ghat' && rng.chance(0.3)) {
+    // Yellow warning board: sharp bends ahead.
+    const sz = -rng.range(3, CHUNK_M - 3);
+    const sx = half + CURB_W + 0.8;
+    b.box(0.08, 1.6, 0.08, sx, 0.8, sz, '#8f8a80');
+    b.box(0.06, 0.9, 0.9, sx, 1.9, sz, '#f2c230', 0, 0, 0);
+    b.box(0.07, 0.4, 0.12, sx - 0.01, 1.95, sz, '#1c1c1f', 0.6, 0, 0);
+  }
+
+  // Distant hills behind the road.
+  if (style.hills && t !== 'ghat') {
+    for (const side of [-1, 1] as const) {
+      if (t === 'coast' && side === -1) continue;
+      const hx = side * (edge + rng.range(50, 70));
+      const hh = rng.range(14, 26);
+      b.cylinder(rng.range(16, 24), hh, hx, hh / 2 - 1, -rng.range(4, 20), pick(rng, ['#6f7d52', '#7d8558', '#5f6e4a']), 7, rng.range(2, 6));
+    }
+  }
+
+  const quads = new GeoBuilder();
+  for (let i = 0; i < pools.length; i += 4) {
+    const r = pools[i + 2]!;
+    const g = new THREE.PlaneGeometry(r * 2, r * 2);
+    g.rotateX(-Math.PI / 2);
+    quads.add(g, '#ffcf8a', pools[i]!, 0.2, pools[i + 1]!);
+  }
+  return { main: b.build(), glow: glow.build(), pools: quads.build(), signs: new GeoBuilder().build() };
 }
