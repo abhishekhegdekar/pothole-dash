@@ -1351,3 +1351,10 @@ try {
 } catch (err) {
   showError(err);
 }
+
+// Offline play: the normal build registers a service worker; the one-file preview does not.
+if (import.meta.env.PROD && import.meta.env.MODE !== 'single' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Offline cache unavailable', err));
+  });
+}

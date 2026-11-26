@@ -395,3 +395,4 @@ h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 28px; 
   .rn-km { font-size: 28px; }
 }
 .scene-panel.is-narrator { min-height: 0; }
+.menu-version { margin: 0; font-size: 11px; color: var(--muted); letter-spacing: 0.1em; }
