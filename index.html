@@ -182,7 +182,31 @@
               <span class="mc-tag">Find Lara's inhaler and fuel, then get back to the door.</span>
               <span class="mc-foot"><span>Bat or machete</span><span class="mc-go">Go in</span></span>
             </button>
+            <button id="btnStoryShop" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #2a2418, #6a5530)">
+              <span class="mc-cond">Upgrades · Paint</span><span class="mc-name">Tanvi's workshop</span>
+              <span class="mc-tag">Spend Free Run points and scrap on the SUV.</span>
+              <span class="mc-foot"><span>8 upgrades</span><span class="mc-go">Open</span></span>
+            </button>
           </div>
+        </div>
+      </section>
+
+      <section id="workshop" class="overlay garage workshop" hidden>
+        <div class="garage-head">
+          <button id="btnShopBack" class="icon-btn" type="button" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+          <h2>Tanvi's workshop</h2>
+          <span class="chip"><span class="chip-dot chip-points" aria-hidden="true"></span><span id="shopPoints">0</span></span>
+          <span class="chip"><span class="chip-dot chip-scrap" aria-hidden="true"></span><span id="shopScrap">0</span></span>
+        </div>
+        <div class="garage-card shop-card">
+          <div class="shop-paint">
+            <span class="sr-name">Paint</span>
+            <span id="shopPaintName" class="sr-detail"></span>
+            <div id="shopPaints" class="swatches"></div>
+          </div>
+          <div id="shopList" class="shop-list"></div>
         </div>
       </section>
 

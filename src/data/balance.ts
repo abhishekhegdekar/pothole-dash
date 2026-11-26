@@ -61,8 +61,8 @@ export const BALANCE = {
   fuelCan: 0.4,
   /** Chance that a safe gap gets a fuel can instead of a scrap trail. */
   fuelCanRate: 0.04,
-  /** Zombies the bumper can take before it costs a dent, by ram bar level 0..3. Hordes count as 3. */
-  ramHits: [3, 5, 8, 12],
+  /** Zombies the bumper can take before it costs a dent, by ram bar level 0..4. Hordes count as 3. */
+  ramHits: [3, 5, 8, 12, 20],
   /** Seconds between roof gun shots, by gun level 1..3 (0 = no gun). */
   gunCooldown: [0, 2.4, 1.7, 1.1],
   /** How far ahead the roof gun reaches (metres). */

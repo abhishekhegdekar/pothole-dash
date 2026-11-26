@@ -1,5 +1,5 @@
 /** Versioned save data. Reads are validated; old versions are migrated, bad data is reset, never thrown. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 const KEY = 'pothole-dash.save';
 
 export type GraphicsQuality = 'high' | 'low';
@@ -30,6 +30,10 @@ export interface SaveData {
   selectedVehicle: string;
   /** Best score on each map. */
   bestByMap: Record<string, number>;
+  /** Story Mode: SUV upgrade levels (0..3) by upgrade id, the paint in use, and items owned (weapons, and paints as `paint:<id>`). */
+  upgrades: Record<string, number>;
+  paint: string;
+  weapons: string[];
 }
 
 export interface StorageLike {
@@ -53,6 +57,9 @@ export function defaultSave(): SaveData {
     ownedVehicles: ['auto'],
     selectedVehicle: 'auto',
     bestByMap: {},
+    upgrades: {},
+    paint: 'olive',
+    weapons: ['bat'],
   };
 }
 
@@ -82,6 +89,8 @@ export function parseSave(raw: string | null): SaveData {
     d.bestByMap = { mumbai: d.bestScore };
     d.v = 4;
   }
+  // v4 had no Story workshop.
+  if (d.v === 4) d.v = 5;
   if (d.v !== SAVE_VERSION) return defaultSave();
 
   const def = defaultSave();
@@ -94,6 +103,10 @@ export function parseSave(raw: string | null): SaveData {
   const best: Record<string, number> = {};
   if (typeof d.bestByMap === 'object' && d.bestByMap !== null) {
     for (const [k, v] of Object.entries(d.bestByMap as Record<string, unknown>)) if (k.length < 40) best[k] = int(v);
+  }
+  const upgrades: Record<string, number> = {};
+  if (typeof d.upgrades === 'object' && d.upgrades !== null) {
+    for (const [k, v] of Object.entries(d.upgrades as Record<string, unknown>)) if (k.length < 20) upgrades[k] = Math.min(3, int(v));
   }
   const s = (typeof d.settings === 'object' && d.settings !== null ? d.settings : {}) as Record<string, unknown>;
   return {
@@ -117,6 +130,9 @@ export function parseSave(raw: string | null): SaveData {
     selectedVehicle:
       typeof d.selectedVehicle === 'string' && ownedVehicles.includes(d.selectedVehicle) ? d.selectedVehicle : def.selectedVehicle,
     bestByMap: best,
+    upgrades,
+    paint: typeof d.paint === 'string' && d.paint.length < 20 ? d.paint : def.paint,
+    weapons: ids(d.weapons, def.weapons),
   };
 }
 
