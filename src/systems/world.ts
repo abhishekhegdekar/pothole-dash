@@ -62,6 +62,8 @@ export class World {
   comboTimer = 0;
   nearMisses = 0;
   bestCombo = 0;
+  /** Metres of road the camera shows ahead of the player. The 3D view sees further than the 2D one. */
+  viewAhead: number = B.visibleMeters - B.playerOffset;
 
   private speedMul = 1;
   private nextRowY = 0;
@@ -111,7 +113,7 @@ export class World {
 
   /** Metres ahead of the player where new rows appear (just off the top of the screen). */
   spawnAhead(): number {
-    return B.visibleMeters - B.playerOffset + 4;
+    return this.viewAhead + 4;
   }
 
   steer(dir: -1 | 1): void {

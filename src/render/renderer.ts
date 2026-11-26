@@ -4,6 +4,7 @@ import type { World } from '../systems/world';
 import { Particles } from './particles';
 import { drawRoadTile, TILE_M } from './road';
 import { drawAutoSprite, drawPotholeSprites, type Sprite } from './sprites';
+import type { GameRenderer } from './types';
 
 const MAX_DPR = 2;
 const SKID_MAX = 240;
@@ -21,7 +22,9 @@ function tileVariant(k: number): number {
   return h === 0 ? 2 : h < 4 ? 1 : 0;
 }
 
-export class Renderer {
+/** 2D top-down renderer, used when WebGL is not available. */
+export class Renderer implements GameRenderer {
+  speedFx = 0;
   readonly particles = new Particles();
   private readonly ctx: CanvasRenderingContext2D;
   private w = 1;
@@ -136,6 +139,10 @@ export class Renderer {
     this.textLife[i] = 1;
     this.textColour[i] = colour;
     this.textSize[i] = size;
+  }
+
+  setQuality(): void {
+    /* The 2D view has a single quality level. */
   }
 
   draw(alpha: number, frameDt: number, running: boolean): void {

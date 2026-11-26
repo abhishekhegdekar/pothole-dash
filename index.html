@@ -24,25 +24,68 @@
         </div>
       </div>
 
+      <div id="speedfx" class="speedfx" aria-hidden="true"></div>
       <div id="flash" class="flash" aria-hidden="true"></div>
       <div id="count" class="count" aria-live="assertive" hidden></div>
       <div id="banner" class="banner" aria-live="polite" hidden></div>
 
-      <section id="menu" class="overlay">
-        <div class="card">
-          <div class="plate">
-            <span class="plate-small">City Streets</span>
-            <h1>Pothole<br />Dash</h1>
+      <section id="menu" class="menu">
+        <div class="menu-top">
+          <div class="wallet" aria-label="Your wallet">
+            <span class="chip"><span class="chip-dot chip-coin" aria-hidden="true"></span><span id="walletCoins">0</span> coins</span>
+            <span class="chip"><span class="chip-dot chip-points" aria-hidden="true"></span><span id="walletPoints">0</span> points</span>
           </div>
-          <p class="lede">Drive the auto. Dodge the potholes. Three dents and you're walking home.</p>
-          <button id="btnStart" class="btn" type="button">Start driving</button>
+        </div>
+        <div class="menu-panel">
+          <p class="menu-eyebrow">Mumbai · after dark</p>
+          <h1 class="menu-title">Pothole<br />Dash</h1>
           <p id="menuBest" class="best"></p>
-          <dl class="controls">
-            <div><dt>Phone</dt><dd>Swipe, or tap left / right</dd></div>
-            <div><dt>Keyboard</dt><dd>← → or A / D, P to pause</dd></div>
-          </dl>
-          <button id="btnMute" class="link-btn" type="button" aria-pressed="true">Sound on</button>
-          <div class="truck-art" aria-hidden="true">Horn OK Please</div>
+          <nav class="menu-list" aria-label="Main menu">
+            <button id="btnStart" class="menu-item is-primary" type="button">
+              <span class="mi-name">Free Run</span>
+              <span class="mi-sub">Endless drive. Earn coins and points.</span>
+            </button>
+            <button id="btnStory" class="menu-item" type="button" aria-disabled="true">
+              <span class="mi-name">Story Mode <span class="soon">Coming soon</span></span>
+              <span class="mi-sub">500 km. Raj, Tanvi and Lara.</span>
+            </button>
+            <button id="btnGarage" class="menu-item" type="button" aria-disabled="true">
+              <span class="mi-name">Garage <span class="soon">Coming soon</span></span>
+              <span class="mi-sub">Vehicles, paint and upgrades</span>
+            </button>
+            <button id="btnSettings" class="menu-item" type="button">
+              <span class="mi-name">Settings</span>
+              <span class="mi-sub">Sound, vibration, graphics</span>
+            </button>
+          </nav>
+          <p id="menuNote" class="menu-note" aria-live="polite"></p>
+          <p class="menu-controls">Swipe or tap left/right · ← → or A/D · P to pause</p>
+        </div>
+      </section>
+
+      <section id="settings" class="overlay" hidden>
+        <div class="card card-small settings">
+          <h2>Settings</h2>
+          <div class="setting">
+            <span>Sound effects</span>
+            <button id="btnMute" class="toggle" type="button" aria-pressed="true">On</button>
+          </div>
+          <div class="setting">
+            <span>Vibration</span>
+            <button id="btnVibe" class="toggle" type="button" aria-pressed="true">On</button>
+          </div>
+          <div class="setting">
+            <span>Graphics</span>
+            <div class="seg" role="group" aria-label="Graphics quality">
+              <button id="btnGfxHigh" type="button" aria-pressed="true">High</button>
+              <button id="btnGfxLow" type="button" aria-pressed="false">Low</button>
+            </div>
+          </div>
+          <div class="setting is-muted">
+            <span>Music</span>
+            <span class="soon">Coming in step 2</span>
+          </div>
+          <button id="btnSettingsDone" class="btn" type="button">Done</button>
         </div>
       </section>
 
@@ -51,6 +94,7 @@
           <h2>Paused</h2>
           <p class="lede">Chai break. Tap to keep driving.</p>
           <button id="btnResume" class="btn" type="button">Resume</button>
+          <button id="btnQuit" class="link-btn" type="button">Quit to menu</button>
         </div>
       </section>
 
@@ -67,8 +111,10 @@
             <div><dt>Near misses</dt><dd id="overNear">0</dd></div>
             <div><dt>Best combo</dt><dd id="overCombo">0</dd></div>
           </dl>
+          <p id="overEarned" class="earned"></p>
           <p id="overBest" class="best"></p>
           <button id="btnAgain" class="btn" type="button">Drive again</button>
+          <button id="btnMenu" class="link-btn" type="button">Main menu</button>
           <p class="hint">Space or Enter also restarts</p>
         </div>
       </section>
