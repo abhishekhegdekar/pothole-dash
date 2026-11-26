@@ -1,3 +1,4 @@
+import type { MapDef } from '../data/maps';
 import type { GraphicsQuality } from '../storage/save';
 
 /** What the game needs from a renderer. Both the 3D and the 2D fallback renderer implement it. */
@@ -14,4 +15,6 @@ export interface GameRenderer {
   setQuality(q: GraphicsQuality): void;
   /** Speed effect strength, 0..1, for the HUD vignette. */
   readonly speedFx: number;
+  /** Switches city look, lighting and weather. Optional: the 2D fallback has one look. */
+  setMap?(map: MapDef): void;
 }

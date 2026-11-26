@@ -11,6 +11,8 @@ export class GeoBuilder {
   private readonly q = new THREE.Quaternion();
   private readonly e = new THREE.Euler();
   private readonly c = new THREE.Color();
+  /** Wind sway for parts added from now on (0 = still). Leaves use 1. */
+  sway = 0;
 
   box(w: number, h: number, d: number, x: number, y: number, z: number, colour: THREE.ColorRepresentation, rx = 0, ry = 0, rz = 0): void {
     this.add(new THREE.BoxGeometry(w, h, d), colour, x, y, z, rx, ry, rz);
@@ -42,11 +44,22 @@ export class GeoBuilder {
       col[i * 3 + 2] = this.c.b;
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const sw = new Float32Array(n);
+    if (this.sway) sw.fill(this.sway);
+    g.setAttribute('sway', new THREE.BufferAttribute(sw, 1));
     if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
     this.parts.push(g);
   }
 
+  /** Adds a part whose texture coordinates point at one cell of a texture atlas. */
+  addAtlas(geo: THREE.BufferGeometry, cell: [number, number, number, number], x: number, y: number, z: number, ry = 0): void {
+    const uv = geo.getAttribute('uv');
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, cell[0] + uv.getX(i) * cell[2], cell[1] + uv.getY(i) * cell[3]);
+    this.add(geo, '#ffffff', x, y, z, 0, ry, 0);
+  }
+
   build(): THREE.BufferGeometry {
+    if (this.parts.length === 0) return new THREE.BufferGeometry();
     const merged = mergeGeometries(this.parts, false);
     for (const p of this.parts) p.dispose();
     this.parts.length = 0;

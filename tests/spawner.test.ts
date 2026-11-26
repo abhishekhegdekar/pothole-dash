@@ -3,6 +3,9 @@ import { Rng } from '../src/core/rng';
 import { BALANCE as B } from '../src/data/balance';
 import { VEHICLES } from '../src/data/vehicles';
 import { rowIntervalAt, speedAt } from '../src/systems/difficulty';
+import { MAPS, MAP_ORDER } from '../src/data/maps';
+import { OBSTACLES } from '../src/data/obstacles';
+import { blocksLane } from '../src/systems/collision';
 import { computeFreeMask, createRow, everyLaneReachable, maxLaneShift, Spawner } from '../src/systems/spawner';
 
 const V = VEHICLES.auto;
@@ -42,6 +45,46 @@ describe('spawner fairness', () => {
     // Sanity: the spawner really is placing obstacles, not just giving up.
     expect(obstacles).toBeGreaterThan(10000 * 60);
   }, 30000);
+
+  for (const id of MAP_ORDER) {
+    const map = MAPS[id];
+    it(`stays fair with ${map.name} traffic and obstacles, across 3,000 seeds`, () => {
+      const row = createRow();
+      const lanes = map.laneCount;
+      const all = (1 << lanes) - 1;
+      const failures: string[] = [];
+      const seen = new Set<number>();
+      for (let seed = 1; seed <= 3000; seed++) {
+        const spawner = new Spawner(new Rng(seed), lanes, V.width, V.laneChangeTime, map.mix);
+        let prev = 1 << B.startLane;
+        for (let i = 0; i < 60; i++) {
+          const t = i * 3;
+          const speed = speedAt(t);
+          const interval = rowIntervalAt(t);
+          spawner.next(row, t, speed, interval, 50);
+          const mask = computeFreeMask(row, lanes, V.width) & ~row.blockedMask;
+          if ((mask & all) === 0) failures.push(`seed ${seed} row ${i}: no safe lane`);
+          if (mask !== row.freeMask) failures.push(`seed ${seed} row ${i}: mask mismatch`);
+          if (!everyLaneReachable(prev, mask, maxLaneShift(interval, speed, V.laneChangeTime), lanes)) {
+            failures.push(`seed ${seed} row ${i}: unreachable`);
+          }
+          // Nothing is placed in a lane that moving traffic is using.
+          for (let k = 0; k < row.count; k++) {
+            seen.add(row.kind[k]!);
+            for (let l = 0; l < lanes; l++) {
+              if (row.blockedMask & (1 << l) && OBSTACLES[row.kind[k]!].effect === 'dent' && blocksLane(row.kind[k]!, row.x[k]!, l, V.width)) {
+                failures.push(`seed ${seed} row ${i}: obstacle in traffic lane`);
+              }
+            }
+          }
+          prev = mask;
+        }
+      }
+      expect(failures.slice(0, 5)).toEqual([]);
+      // Every special obstacle of the map really shows up.
+      for (const k of Object.keys(map.mix.specials)) expect(seen.has(Number(k)), `kind ${k}`).toBe(true);
+    }, 30000);
+  }
 
   it('is deterministic for a seed', () => {
     const a = new Spawner(new Rng(42), B.laneCount, V.width, V.laneChangeTime);

@@ -60,7 +60,9 @@ interface Theme {
   bassPattern: string;
   lead: Note[];
   /** Synth voice for the lead. */
-  leadVoice: 'bansuri' | 'shehnai';
+  leadVoice: 'bansuri' | 'shehnai' | 'pluck';
+  /** Semitones to shift the whole theme. */
+  transpose?: number;
   drums: string;
   hats: string;
   perc: string;
@@ -144,13 +146,14 @@ const MENU: Theme = {
   leadVoice: 'bansuri',
   drums: 'G . . n . . n . G . n . n . . .',
   hats: '. . . . . . . . . . . . . . . .',
+  // (tabla is kept soft in the menu mix: see levels)
   perc: '. . . . . . . . . . . . . . . .',
   drone: ['A3', 'D4', 'D4', 'D3'].map(midiOf),
   levels: (i) => ({
     drone: 0.8,
     pad: 0.6,
     bass: 0.5,
-    drums: 0.35 + 0.3 * i,
+    drums: 0.28 + 0.25 * i,
     hats: 0,
     perc: 0,
     lead: 0.75,
@@ -158,7 +161,42 @@ const MENU: Theme = {
   }),
 };
 
-const THEMES: Record<Exclude<Mood, 'off' | 'over'>, Theme> = { menu: MENU, run: RUN };
+/** Thane: same tune, gentler, up a tone, with bansuri and a lighter dhol. */
+const THANE: Theme = {
+  ...RUN,
+  bpm: 104,
+  transpose: 2,
+  leadVoice: 'bansuri',
+  drums: 'D . . T . . T . D . T . . T . .',
+  perc: '. . . . s . . . . . . . s . . .',
+  levels: (i) => ({ ...RUN.levels(i), drone: 0.35, perc: ramp(i, 0.3, 0.7), lead2: ramp(i, 0.5, 0.9) }),
+  drone: ['A3', 'D4', 'D4', 'D3'].map(midiOf),
+};
+
+/** Bangalore: electronic, four on the floor, a plucked synth riff. */
+const BANGALORE: Theme = {
+  ...RUN,
+  bpm: 124,
+  transpose: -2,
+  leadVoice: 'pluck',
+  bassPattern: '. . R . . . R . . . R . . R O .',
+  drums: 'K . . . K . . . K . . . K . . .',
+  hats: '. . x . . . x . . . x . . . x .',
+  perc: '. . . . c . . . . . . . c . s s',
+  levels: (i) => ({
+    drone: 0,
+    pad: 0.6,
+    bass: 1,
+    drums: 0.85 + 0.15 * i,
+    hats: 0.5 + 0.5 * ramp(i, 0.1, 0.4),
+    perc: ramp(i, 0.35, 0.7),
+    lead: 0.75,
+    lead2: ramp(i, 0.6, 0.95),
+  }),
+};
+
+export type RunTheme = 'mumbai' | 'thane' | 'bangalore';
+const RUN_THEMES: Record<RunTheme, Theme> = { mumbai: RUN, thane: THANE, bangalore: BANGALORE };
 
 const LOOKAHEAD = 0.25;
 
@@ -182,6 +220,9 @@ export class Music {
   private lastLeadHz = 0;
   private muffled = false;
   private overTimer = 0;
+  private runTheme: RunTheme = 'mumbai';
+  /** Steps played since the theme started: the lead waits for the groove to settle in. */
+  private played = 0;
 
   constructor(private readonly sfx: Sfx) {
     sfx.onReady(() => this.init());
@@ -206,7 +247,7 @@ export class Music {
       this.reverb = c.createConvolver();
       this.reverb.buffer = this.impulse(c, 2.2);
       const wet = c.createGain();
-      wet.gain.value = 0.32;
+      wet.gain.value = 0.26;
       this.reverb.connect(wet).connect(this.out);
       this.delay = c.createDelay(1.5);
       const fb = c.createGain();
@@ -250,9 +291,11 @@ export class Music {
   }
 
   /** Changes the music to fit the game state. Safe to call every frame. */
-  setMood(mood: Mood, intensity = 0): void {
+  setMood(mood: Mood, intensity = 0, runTheme: RunTheme = this.runTheme): void {
     this.intensity = Math.min(1, Math.max(0, intensity));
-    if (mood === this.mood) return;
+    const themeChanged = runTheme !== this.runTheme;
+    this.runTheme = runTheme;
+    if (mood === this.mood && !(mood === 'run' && themeChanged)) return;
     const prev = this.mood;
     this.mood = mood;
     const c = this.ctx;
@@ -272,7 +315,7 @@ export class Music {
       }, 1900);
       return;
     }
-    this.switchTo(THEMES[mood], prev === 'off' ? 0.05 : 0.45);
+    this.switchTo(mood === 'menu' ? MENU : RUN_THEMES[this.runTheme], prev === 'off' ? 0.05 : 0.45);
   }
 
   /** Muffles and lowers the music, for pause screens. */
@@ -305,6 +348,7 @@ export class Music {
       this.theme = this.pending;
       this.pending = null;
       this.step = 0;
+      this.played = 0;
       this.nextTime = now + 0.06;
       for (const name of LAYERS) this.targets.set(name, -1);
       this.out.gain.cancelScheduledValues(now);
@@ -328,6 +372,7 @@ export class Music {
     while (this.nextTime < now + LOOKAHEAD) {
       this.playStep(th, this.step, this.nextTime, stepDur);
       this.step = (this.step + 1) % (th.bars * 16);
+      this.played++;
       this.nextTime += stepDur;
     }
   }
@@ -335,39 +380,47 @@ export class Music {
   private playStep(th: Theme, step: number, t: number, sd: number): void {
     const bar = Math.floor(step / 16);
     const s = step % 16;
+    const tr = th.transpose ?? 0;
     const L = (n: LayerName): GainNode => this.layers.get(n)!;
     // Swing the off-sixteenths a little for a human feel.
     const tt = s % 2 === 1 ? t + sd * 0.12 : t;
 
-    if (s === 0) this.pad(L('pad'), th.chords[bar]!, t, sd * 16);
-    if (th.drone && s % 4 === 0) this.tanpura(L('drone'), th.drone[s / 4]!, t);
+    if (s === 0) this.pad(L('pad'), th.chords[bar]!.map((m) => m + tr), t, sd * 16);
+    if (th.drone && s % 4 === 0) this.tanpura(L('drone'), th.drone[s / 4]! + tr, t);
 
     const b = th.bassPattern.split(' ')[s];
     if (b && b !== '.') {
-      const root = th.bassRoots[bar]!;
+      const root = th.bassRoots[bar]! + tr;
       const m = b === 'R' ? root : b === 'O' ? root + 12 : root + 7;
       this.bass(L('bass'), hz(m), tt, sd * (th.bpm < 100 ? 6 : 1.6));
     }
 
     const d = th.drums.split(' ')[s];
     if (d === 'D') this.dha(L('drums'), tt);
-    else if (d === 'T') this.ta(L('drums'), tt, 1);
+    else if (d === 'T') this.ta(L('drums'), tt, 0.8 + Math.random() * 0.25);
     else if (d === 'G') this.ge(L('drums'), tt);
     else if (d === 'n') this.na(L('drums'), tt);
+    else if (d === 'K') this.kick(L('drums'), t);
 
     if (th.hats.split(' ')[s] === 'x') this.hat(L('hats'), tt, 0.09);
     const p = th.perc.split(' ')[s];
     if (p === 's') this.hat(L('perc'), tt, 0.035, 0.22);
     else if (p === 'c') this.clap(L('perc'), tt);
     // A dhol roll into the next phrase at the end of every 4 bars.
-    if (th === RUN && bar % 4 === 3 && s >= 12) this.ta(L('perc'), tt, 0.8);
+    if ((th === RUN || th === THANE) && bar % 4 === 3 && s >= 12) this.ta(L('perc'), tt, 0.8);
 
+    // Let the drums and bass play one bar on their own before the tune comes in.
+    if (this.played < 16 && th !== MENU) return;
     for (const n of th.lead) {
       if (n.step !== step) continue;
       const dur = n.len * sd;
-      if (th.leadVoice === 'shehnai') this.shehnai(L('lead'), hz(n.midi), t, dur);
-      else this.bansuri(L('lead'), hz(n.midi), t, dur);
-      this.sitar(L('lead2'), hz(n.midi + 12), t);
+      const f = hz(n.midi + tr);
+      if (th.leadVoice === 'shehnai') this.shehnai(L('lead'), f, t, dur);
+      else if (th.leadVoice === 'pluck') {
+        this.sitar(L('lead'), f, t, 0.16);
+        this.sitar(L('lead'), f * 2, t + sd * 2, 0.06);
+      } else this.bansuri(L('lead'), f, t, dur);
+      this.sitar(L('lead2'), f * 2, t);
     }
   }
 
@@ -537,9 +590,9 @@ export class Music {
     bp.Q.value = 0.7;
     const lp = c.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 3800;
+    lp.frequency.value = 3000;
     bp.connect(lp).connect(g).connect(out);
-    this.env(g, t, 0.16, 0.03, Math.max(0.02, dur - 0.08), 0.12);
+    this.env(g, t, 0.12, 0.045, Math.max(0.02, dur - 0.09), 0.14);
     const lfo = this.osc('sine', 5.6, t, t + dur + 0.25);
     const depth = c.createGain();
     depth.gain.setValueAtTime(0, t);
@@ -589,7 +642,17 @@ export class Music {
   }
 
   /** Plucked, buzzy string a little like a sitar: bright attack, quick fall, a small bend in. */
-  private sitar(out: AudioNode, f0: number, t: number): void {
+  /** Electronic kick drum. */
+  private kick(out: AudioNode, t: number): void {
+    const g = this.ctx!.createGain();
+    g.connect(out);
+    this.env(g, t, 0.95, 0.002, 0.03, 0.28);
+    const o = this.osc('sine', 160, t, t + 0.4);
+    o.frequency.exponentialRampToValueAtTime(44, t + 0.12);
+    o.connect(g);
+  }
+
+  private sitar(out: AudioNode, f0: number, t: number, vol = 0.09): void {
     const c = this.ctx!;
     const g = c.createGain();
     const f = c.createBiquadFilter();
@@ -598,7 +661,7 @@ export class Music {
     f.frequency.setValueAtTime(5000, t);
     f.frequency.exponentialRampToValueAtTime(700, t + 0.5);
     f.connect(g).connect(out);
-    this.env(g, t, 0.09, 0.003, 0.02, 0.9);
+    this.env(g, t, vol, 0.003, 0.02, 0.9);
     for (const det of [0, 7]) {
       const o = this.osc('sawtooth', f0 * 0.985, t, t + 1.1, det);
       o.frequency.exponentialRampToValueAtTime(f0, t + 0.04);
