@@ -8,7 +8,12 @@ import { SaveStore } from './storage/save';
 import { World } from './systems/world';
 import { formatDistance } from './ui/format';
 
-type State = 'menu' | 'play' | 'paused' | 'over';
+type State = 'menu' | 'countdown' | 'play' | 'paused' | 'over';
+
+/** Countdown beats: 3, 2, 1 then GO, in seconds. */
+const BEAT = 0.55;
+const SLOWMO_TIME = 0.55;
+const SLOWMO_SCALE = 0.3;
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -38,6 +43,14 @@ function boot(): void {
     over: el('over'),
     hud: el('hud'),
     dist: el('hudDist'),
+    score: el('hudScore'),
+    combo: el('hudCombo'),
+    count: el('count'),
+    banner: el('banner'),
+    flash: el('flash'),
+    overScore: el('overScore'),
+    overNear: el('overNear'),
+    overCombo: el('overCombo'),
     dents: el('hudDents'),
     best: el('menuBest'),
     overDist: el('overDist'),
@@ -65,6 +78,18 @@ function boot(): void {
   let overTimer = 0;
   let shownMeters = -1;
   let shownDents = -1;
+  let shownScore = -1;
+  let shownCombo = -1;
+  let countT = 0;
+  let countBeat = -1;
+  let bannerTimer = 0;
+
+  /** Restarts a CSS animation on an element by toggling its class. */
+  const replay = (node: HTMLElement, cls: string): void => {
+    node.classList.remove(cls);
+    void node.offsetWidth;
+    node.classList.add(cls);
+  };
 
   const resize = (): void => renderer.resize(app.clientWidth, app.clientHeight, window.devicePixelRatio);
   resize();
@@ -76,29 +101,45 @@ function boot(): void {
     ui.btnMute.setAttribute('aria-pressed', String(!sfx.muted));
   };
   renderMute();
-  ui.best.textContent = save.bestDistance > 0 ? `Best: ${formatDistance(save.bestDistance)}` : 'Watch the road. It bites.';
+  ui.best.textContent = save.bestScore > 0 ? `Best score: ${save.bestScore.toLocaleString('en-IN')}` : 'Watch the road. It bites.';
 
   const show = (which: HTMLElement | null): void => {
     for (const o of [ui.menu, ui.paused, ui.over]) o.hidden = o !== which;
     ui.hud.classList.toggle('is-hidden', state === 'menu');
   };
 
+  const showBeat = (beat: number): void => {
+    const go = beat >= 3;
+    ui.count.hidden = false;
+    ui.count.classList.toggle('is-go', go);
+    ui.count.innerHTML = `<span>${go ? 'GO!' : String(3 - beat)}</span>`;
+    sfx.beep(go);
+  };
+
+  const beginCountdown = (): void => {
+    state = 'countdown';
+    countT = 0;
+    countBeat = -1;
+    input.clear();
+    show(null);
+  };
+
   const start = (): void => {
     sfx.unlock();
     window.clearTimeout(overTimer);
+    window.clearTimeout(bannerTimer);
+    ui.banner.hidden = true;
     world.reset(newSeed());
-    renderer.particles.clear();
-    input.clear();
-    state = 'play';
+    renderer.resetRun();
     overReady = false;
-    shownDents = -1;
-    show(null);
-    sfx.horn();
+    shownDents = shownScore = shownCombo = shownMeters = -1;
+    beginCountdown();
   };
 
   const pause = (): void => {
-    if (state !== 'play') return;
+    if (state !== 'play' && state !== 'countdown') return;
     state = 'paused';
+    ui.count.hidden = true;
     show(ui.paused);
     sfx.suspend();
   };
@@ -106,28 +147,41 @@ function boot(): void {
   const resume = (): void => {
     if (state !== 'paused') return;
     sfx.unlock();
-    input.clear();
-    state = 'play';
-    show(null);
+    // Always count back in, so the player is ready before the road moves.
+    beginCountdown();
+  };
+
+  const milestone = (m: number): void => {
+    ui.banner.textContent = `${formatDistance(m)}!`;
+    ui.banner.hidden = false;
+    replay(ui.banner, 'is-on');
+    window.clearTimeout(bannerTimer);
+    bannerTimer = window.setTimeout(() => (ui.banner.hidden = true), 1700);
+    sfx.horn();
   };
 
   const gameOver = (): void => {
     state = 'over';
     const d = world.dist;
-    const isBest = d > save.bestDistance;
+    const score = world.score;
+    const isBest = score > save.bestScore;
     save.runs++;
-    if (isBest) save.bestDistance = d;
+    if (isBest) save.bestScore = score;
+    if (d > save.bestDistance) save.bestDistance = d;
     store.save(save);
     ui.overDist.textContent = formatDistance(d);
-    ui.overBest.textContent = `Best: ${formatDistance(save.bestDistance)}`;
+    ui.overScore.textContent = score.toLocaleString('en-IN');
+    ui.overNear.textContent = String(world.nearMisses);
+    ui.overCombo.textContent = world.bestCombo > 1 ? `×${world.bestCombo}` : String(world.bestCombo);
+    ui.overBest.textContent = `Best score: ${save.bestScore.toLocaleString('en-IN')} · Best distance: ${formatDistance(save.bestDistance)}`;
     ui.overBadge.hidden = !isBest;
     ui.overTitle.textContent = isBest ? 'New record!' : 'Auto broke down!';
-    ui.best.textContent = `Best: ${formatDistance(save.bestDistance)}`;
+    ui.best.textContent = `Best score: ${save.bestScore.toLocaleString('en-IN')}`;
     overTimer = window.setTimeout(() => {
       overReady = true;
       show(ui.over);
       ui.btnAgain.focus({ preventScroll: true });
-    }, 700);
+    }, 1300);
   };
 
   // Buttons.
@@ -167,6 +221,8 @@ function boot(): void {
       if (a === Action.Left) world.steer(-1);
       else if (a === Action.Right) world.steer(1);
       else if (a === Action.Pause) pause();
+    } else if (state === 'countdown') {
+      if (a === Action.Pause) pause();
     } else if (state === 'paused') {
       if (a === Action.Pause || a === Action.Confirm) resume();
     } else if (state === 'menu') {
@@ -178,15 +234,44 @@ function boot(): void {
 
   const update = (dt: number): void => {
     input.drain(onAction);
-    if (state === 'play' || state === 'over') {
-      world.update(dt);
+    if (state === 'countdown') {
+      countT += dt;
+      const beat = Math.min(3, Math.floor(countT / BEAT));
+      if (beat !== countBeat) {
+        countBeat = beat;
+        showBeat(beat);
+      }
+      if (beat >= 3) {
+        state = 'play';
+        show(null);
+        window.setTimeout(() => {
+          if (state !== 'countdown') ui.count.hidden = true;
+        }, 450);
+      }
+      world.attract(dt, 0);
+    } else if (state === 'play' || state === 'over') {
+      const slowmo = !world.alive && world.crashT < SLOWMO_TIME;
+      world.update(slowmo ? dt * SLOWMO_SCALE : dt);
       const ev = world.events;
       if (ev.laneChange !== 0) sfx.swish();
+      if (ev.nearMiss > 0) {
+        sfx.ding(ev.nearMiss);
+        const label = ev.nearMiss > 1 ? `Close one! ×${ev.nearMiss}` : 'Close one!';
+        renderer.popText(label, ev.nearMissX, ev.nearMissY + 1.5, '#ffc21a', 22);
+        renderer.popText(`+${ev.nearMissPoints}`, ev.nearMissX, ev.nearMissY, '#f7f2e7', 18);
+      }
+      if (ev.milestone > 0) milestone(ev.milestone);
       if (ev.hit) {
         renderer.burst(ev.hitX, ev.hitY);
         renderer.addShake(ev.crash ? 18 : 10);
-        if (ev.crash) sfx.crash();
-        else sfx.thud();
+        replay(ui.flash, 'is-on');
+        if (ev.crash) {
+          sfx.crash();
+          renderer.crash(world.targetLane >= 1 ? 1 : -1);
+        } else {
+          sfx.thud();
+          renderer.popText('−1 dent', ev.hitX, ev.hitY + 1, '#ff7a63', 20);
+        }
         try {
           navigator.vibrate?.(ev.crash ? 120 : 40);
         } catch {
@@ -204,11 +289,24 @@ function boot(): void {
   };
 
   const render = (alpha: number, frameDt: number): void => {
-    renderer.draw(alpha, state === 'paused' ? 0 : frameDt, state === 'play');
+    const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
+    renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play');
     const meters = Math.floor(world.dist);
-    if (state !== 'menu' && meters !== shownMeters) {
+    if (state !== 'menu' && state !== 'over' && meters !== shownMeters) {
       shownMeters = meters;
       ui.dist.textContent = formatDistance(world.dist);
+    }
+    if (state !== 'menu' && state !== 'over' && world.score !== shownScore) {
+      shownScore = world.score;
+      ui.score.textContent = `Score ${shownScore.toLocaleString('en-IN')}`;
+    }
+    if (world.combo !== shownCombo) {
+      shownCombo = world.combo;
+      ui.combo.hidden = world.combo < 2;
+      if (world.combo >= 2) {
+        ui.combo.textContent = `Combo ×${world.combo}`;
+        replay(ui.combo, 'combo');
+      }
     }
     if (world.dents !== shownDents) {
       shownDents = world.dents;

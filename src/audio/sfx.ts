@@ -61,6 +61,20 @@ export class Sfx {
     });
   }
 
+  /** Countdown beep; `go` is the higher final beep. */
+  beep(go: boolean): void {
+    this.play((c, t, out) => this.tone(c, t, out, 'square', go ? 880 : 520, go ? 880 : 520, go ? 0.3 : 0.12, 0.12));
+  }
+
+  /** Near-miss ding, pitched up with the combo. */
+  ding(combo: number): void {
+    const f = 700 * Math.pow(1.12, Math.min(combo - 1, 10));
+    this.play((c, t, out) => {
+      this.noiseBurst(c, t, out, 0.12, 3000, 0.15);
+      this.tone(c, t, out, 'triangle', f, f * 1.5, 0.18, 0.22);
+    });
+  }
+
   private play(fn: (c: Ctx, t: number, out: AudioNode) => void): void {
     if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
     try {

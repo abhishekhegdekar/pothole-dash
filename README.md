@@ -2,7 +2,7 @@
 
 A mobile-first browser game: drive an auto-rickshaw down chaotic city roads and dodge the potholes.
 
-**Version 0.1** covers Phase 0 (setup) and Phase 1 (core loop) of the game plan.
+**Version 0.2** covers Phase 0 (setup) and Phase 1 (core loop) of the game plan, plus touch-ups: near-miss combos and score, a 3-2-1 countdown, distance milestones, crash slow-motion and spin-out, speed lines, skid marks and a livelier roadside.
 
 ## Play locally
 

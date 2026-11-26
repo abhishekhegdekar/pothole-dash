@@ -1,10 +1,11 @@
 /** Versioned save data. Reads are validated; bad or old data is migrated or reset, never thrown. */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 const KEY = 'pothole-dash.save';
 
 export interface SaveData {
   v: typeof SAVE_VERSION;
   bestDistance: number;
+  bestScore: number;
   runs: number;
   muted: boolean;
 }
@@ -15,7 +16,7 @@ export interface StorageLike {
 }
 
 export function defaultSave(): SaveData {
-  return { v: SAVE_VERSION, bestDistance: 0, runs: 0, muted: false };
+  return { v: SAVE_VERSION, bestDistance: 0, bestScore: 0, runs: 0, muted: false };
 }
 
 const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : 0);
@@ -30,10 +31,13 @@ export function parseSave(raw: string | null): SaveData {
   }
   if (typeof data !== 'object' || data === null) return defaultSave();
   const d = data as Record<string, unknown>;
-  if (d.v !== SAVE_VERSION) return defaultSave();
+  // Version 1 had no score; the best distance is the best score it could have had.
+  if (d.v === 1) d.bestScore = d.bestDistance;
+  else if (d.v !== SAVE_VERSION) return defaultSave();
   return {
     v: SAVE_VERSION,
     bestDistance: num(d.bestDistance),
+    bestScore: Math.floor(num(d.bestScore)),
     runs: Math.floor(num(d.runs)),
     muted: d.muted === true,
   };
