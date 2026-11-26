@@ -2,9 +2,59 @@
 type Ctx = AudioContext;
 
 export class Sfx {
-  muted = false;
+  private _muted = false;
   private ctx: Ctx | null = null;
   private noise: AudioBuffer | null = null;
+  private master: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private vols = { music: 0.7, sfx: 0.9 };
+  private engineNodes: { osc: OscillatorNode; sub: OscillatorNode; lfo: OscillatorNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
+  private engineOn = false;
+  private readonly listeners: Array<() => void> = [];
+
+  get muted(): boolean {
+    return this._muted;
+  }
+
+  set muted(m: boolean) {
+    this._muted = m;
+    this.applyVolumes();
+  }
+
+  /** The shared audio context, once unlocked. */
+  get context(): Ctx | null {
+    return this.ctx;
+  }
+
+  /** Where music should connect. */
+  get musicOut(): AudioNode | null {
+    return this.musicBus;
+  }
+
+  /** Shared white noise, 0.6 s long. */
+  get noiseBuffer(): AudioBuffer | null {
+    return this.noise;
+  }
+
+  /** Called once, right after the context is first created. */
+  onReady(fn: () => void): void {
+    if (this.ctx) fn();
+    else this.listeners.push(fn);
+  }
+
+  setVolumes(music: number, sfx: number): void {
+    this.vols = { music, sfx };
+    this.applyVolumes();
+  }
+
+  private applyVolumes(): void {
+    if (!this.ctx || !this.master || !this.sfxBus || !this.musicBus) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(this._muted ? 0 : 1, t, 0.05);
+    this.sfxBus.gain.setTargetAtTime(this.vols.sfx, t, 0.05);
+    this.musicBus.gain.setTargetAtTime(this.vols.music * 0.8, t, 0.05);
+  }
 
   /** Call from a user gesture (tap/click/key). Browsers only allow sound after one. */
   unlock(): void {
@@ -17,6 +67,20 @@ export class Sfx {
         this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
         const d = this.noise.getChannelData(0);
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const comp = this.ctx.createDynamicsCompressor();
+        comp.threshold.value = -14;
+        comp.ratio.value = 4;
+        comp.attack.value = 0.004;
+        comp.release.value = 0.2;
+        comp.connect(this.ctx.destination);
+        this.master = this.ctx.createGain();
+        this.master.connect(comp);
+        this.sfxBus = this.ctx.createGain();
+        this.sfxBus.connect(this.master);
+        this.musicBus = this.ctx.createGain();
+        this.musicBus.connect(this.master);
+        this.applyVolumes();
+        for (const fn of this.listeners.splice(0)) fn();
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
     } catch {
@@ -75,10 +139,61 @@ export class Sfx {
     });
   }
 
-  private play(fn: (c: Ctx, t: number, out: AudioNode) => void): void {
-    if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
+  /**
+   * Two-stroke putter of the auto's engine. `k` is 0 at idle and 1 at top speed.
+   * Call every frame; it is cheap when nothing changes.
+   */
+  setEngine(on: boolean, k: number): void {
+    const c = this.ctx;
+    if (!c || !this.sfxBus) return;
     try {
-      fn(this.ctx, this.ctx.currentTime, this.ctx.destination);
+      if (!this.engineNodes) {
+        const osc = c.createOscillator();
+        osc.type = 'sawtooth';
+        const sub = c.createOscillator();
+        sub.type = 'square';
+        const filter = c.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 3;
+        const gain = c.createGain();
+        gain.gain.value = 0;
+        const am = c.createGain();
+        am.gain.value = 0.5;
+        const lfo = c.createOscillator();
+        lfo.type = 'square';
+        const lfoDepth = c.createGain();
+        lfoDepth.gain.value = 0.45;
+        lfo.connect(lfoDepth).connect(am.gain);
+        const subGain = c.createGain();
+        subGain.gain.value = 0.5;
+        osc.connect(filter);
+        sub.connect(subGain).connect(filter);
+        filter.connect(am).connect(gain).connect(this.sfxBus);
+        osc.start();
+        sub.start();
+        lfo.start();
+        this.engineNodes = { osc, sub, lfo, filter, gain };
+      }
+      const n = this.engineNodes;
+      const t = c.currentTime;
+      const f = 38 + k * 34;
+      n.osc.frequency.setTargetAtTime(f, t, 0.15);
+      n.sub.frequency.setTargetAtTime(f / 2, t, 0.15);
+      n.lfo.frequency.setTargetAtTime(9 + k * 14, t, 0.15);
+      n.filter.frequency.setTargetAtTime(240 + k * 420, t, 0.15);
+      if (on !== this.engineOn) {
+        this.engineOn = on;
+        n.gain.gain.setTargetAtTime(on ? 0.07 : 0, t, on ? 0.3 : 0.12);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private play(fn: (c: Ctx, t: number, out: AudioNode) => void): void {
+    if (this._muted || !this.ctx || !this.sfxBus || this.ctx.state !== 'running') return;
+    try {
+      fn(this.ctx, this.ctx.currentTime, this.sfxBus);
     } catch {
       /* ignore */
     }

@@ -7,6 +7,9 @@ export type GraphicsQuality = 'high' | 'low';
 export interface Settings {
   vibration: boolean;
   graphics: GraphicsQuality;
+  /** Volumes from 0 to 1. */
+  musicVol: number;
+  sfxVol: number;
 }
 
 export interface SaveData {
@@ -37,11 +40,13 @@ export function defaultSave(): SaveData {
     coins: 0,
     points: 0,
     scrap: 0,
-    settings: { vibration: true, graphics: 'high' },
+    settings: { vibration: true, graphics: 'high', musicVol: 0.7, sfxVol: 0.9 },
   };
 }
 
 const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : 0);
+const vol = (x: unknown, fallback: number): number =>
+  typeof x === 'number' && Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : fallback;
 const int = (x: unknown): number => Math.floor(num(x));
 
 export function parseSave(raw: string | null): SaveData {
@@ -75,6 +80,8 @@ export function parseSave(raw: string | null): SaveData {
     settings: {
       vibration: s.vibration !== false,
       graphics: s.graphics === 'low' ? 'low' : 'high',
+      musicVol: vol(s.musicVol, 0.7),
+      sfxVol: vol(s.sfxVol, 0.9),
     },
   };
 }

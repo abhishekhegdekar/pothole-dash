@@ -28,7 +28,7 @@ const sample = (): SaveData => ({
   coins: 120,
   points: 4500,
   scrap: 7,
-  settings: { vibration: false, graphics: 'low' },
+  settings: { vibration: false, graphics: 'low', musicVol: 0.25, sfxVol: 1 },
 });
 
 describe('save', () => {

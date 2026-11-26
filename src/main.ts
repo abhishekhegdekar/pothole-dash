@@ -3,6 +3,7 @@ import { Action, Input } from './core/input';
 import { startLoop } from './core/loop';
 import { VEHICLES } from './data/vehicles';
 import { Sfx } from './audio/sfx';
+import { Music } from './audio/music';
 import { Renderer } from './render/renderer';
 import { Renderer3D } from './render3d/renderer3d';
 import type { GameRenderer } from './render/types';
@@ -79,12 +80,16 @@ function boot(): void {
     walletPoints: el('walletPoints'),
     overEarned: el('overEarned'),
     speedfx: el('speedfx'),
+    volMusic: el<HTMLInputElement>('volMusic'),
+    volSfx: el<HTMLInputElement>('volSfx'),
   };
 
   const store = new SaveStore();
   const save = store.load();
   const sfx = new Sfx();
   sfx.muted = save.muted;
+  sfx.setVolumes(save.settings.musicVol, save.settings.sfxVol);
+  const music = new Music(sfx);
   const newSeed = (): number => (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
   const world = new World(VEHICLES.auto, newSeed());
   let renderer: GameRenderer;
@@ -132,6 +137,10 @@ function boot(): void {
     toggle(ui.btnVibe, save.settings.vibration);
     ui.btnGfxHigh.setAttribute('aria-pressed', String(save.settings.graphics === 'high'));
     ui.btnGfxLow.setAttribute('aria-pressed', String(save.settings.graphics === 'low'));
+    for (const [input, v] of [[ui.volMusic, save.settings.musicVol], [ui.volSfx, save.settings.sfxVol]] as const) {
+      input.value = String(Math.round(v * 100));
+      input.style.setProperty('--fill', `${Math.round(v * 100)}%`);
+    }
   };
   const fmt = (n: number): string => n.toLocaleString('en-IN');
   const renderWallet = (): void => {
@@ -256,6 +265,17 @@ function boot(): void {
     resize();
     renderSettings();
   };
+  const onVol = (): void => {
+    save.settings.musicVol = Number(ui.volMusic.value) / 100;
+    save.settings.sfxVol = Number(ui.volSfx.value) / 100;
+    sfx.setVolumes(save.settings.musicVol, save.settings.sfxVol);
+    sfx.unlock();
+    renderSettings();
+  };
+  for (const input of [ui.volMusic, ui.volSfx]) {
+    input.addEventListener('input', onVol);
+    input.addEventListener('change', () => store.save(save));
+  }
   ui.btnGfxHigh.addEventListener('click', () => setGfx('high'));
   ui.btnGfxLow.addEventListener('click', () => setGfx('low'));
   let noteTimer = 0;
@@ -370,6 +390,14 @@ function boot(): void {
   };
 
   const render = (alpha: number, frameDt: number): void => {
+    const running = state === 'play' && world.alive;
+    music.setMood(
+      state === 'menu' ? 'menu' : state === 'over' ? 'over' : 'run',
+      Math.min(1, renderer.speedFx * 0.85 + Math.min(world.combo, 6) * 0.04),
+    );
+    music.setMuffled(state === 'paused');
+    music.update();
+    sfx.setEngine(running || state === 'countdown', renderer.speedFx);
     const slow = state === 'over' && world.crashT < SLOWMO_TIME ? SLOWMO_SCALE : 1;
     renderer.draw(alpha, state === 'paused' ? 0 : frameDt * slow, state === 'play', state === 'menu' ? 'menu' : 'game');
     const fx = Math.round(renderer.speedFx * 100) / 100;
