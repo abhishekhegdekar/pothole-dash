@@ -48,6 +48,13 @@ export const BALANCE = {
   /** How fast the auto skids to a stop after the final crash (m/s per second). */
   crashDecel: 16,
 
+  /** Throttle: speed multipliers when accelerating or braking, and how fast they kick in (per second). */
+  boostMul: 1.3,
+  brakeMul: 0.5,
+  throttleRate: 1.6,
+  /** Extra points per metre while accelerating. */
+  boostPoints: 0.5,
+
   /** Particles, rows etc. are kept in fixed pools of this size. */
   obstaclePool: 48,
 } as const;

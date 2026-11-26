@@ -16,9 +16,15 @@ export class Input {
   private pointerId = -1;
   private swiped = false;
   private readonly offs: Array<() => void> = [];
+  private gasKey = false;
+  private brakeKey = false;
+  private gasPedal = false;
+  private brakePedal = false;
 
   constructor(private readonly surface: HTMLElement) {
     this.on(window, 'keydown', (e) => this.onKey(e as KeyboardEvent));
+    this.on(window, 'keyup', (e) => this.onKeyUp(e as KeyboardEvent));
+    this.on(window, 'blur', () => (this.gasKey = this.brakeKey = this.gasPedal = this.brakePedal = false));
     this.on(surface, 'pointerdown', (e) => this.onDown(e as PointerEvent));
     this.on(surface, 'pointermove', (e) => this.onMove(e as PointerEvent));
     this.on(surface, 'pointerup', (e) => this.onUp(e as PointerEvent));
@@ -39,6 +45,39 @@ export class Input {
     this.count = 0;
   }
 
+  /** -1 braking, 0 cruising, +1 accelerating. Brake wins if both are held. */
+  get throttle(): -1 | 0 | 1 {
+    if (this.brakeKey || this.brakePedal) return -1;
+    if (this.gasKey || this.gasPedal) return 1;
+    return 0;
+  }
+
+  /** Wires an on-screen pedal button: held while a finger or the mouse is on it. */
+  bindPedal(el: HTMLElement, which: 'gas' | 'brake'): void {
+    const set = (held: boolean): void => {
+      if (which === 'gas') this.gasPedal = held;
+      else this.brakePedal = held;
+      el.classList.toggle('is-held', held);
+    };
+    this.on(el, 'pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        el.setPointerCapture((e as PointerEvent).pointerId);
+      } catch {
+        /* ignore */
+      }
+      set(true);
+    });
+    for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) this.on(el, t, () => set(false));
+    this.on(el, 'contextmenu', (e) => e.preventDefault());
+  }
+
+  private onKeyUp(e: KeyboardEvent): void {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') this.gasKey = false;
+    else if (e.code === 'ArrowDown' || e.code === 'KeyS') this.brakeKey = false;
+  }
+
   destroy(): void {
     for (const off of this.offs) off();
     this.offs.length = 0;
@@ -56,6 +95,16 @@ export class Input {
   }
 
   private onKey(e: KeyboardEvent): void {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+      this.gasKey = true;
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      this.brakeKey = true;
+      e.preventDefault();
+      return;
+    }
     if (e.repeat) return;
     switch (e.code) {
       case 'ArrowLeft':

@@ -125,6 +125,24 @@ export class Sfx {
     });
   }
 
+  /** Coin pickup: a bright two-note ping that climbs with a quick streak. */
+  coin(streak: number): void {
+    const f = 1320 * Math.pow(1.06, Math.min(streak, 8));
+    this.play((c, t, out) => {
+      this.tone(c, t, out, 'triangle', f, f, 0.07, 0.12);
+      this.tone(c, t + 0.06, out, 'triangle', f * 1.5, f * 1.5, 0.14, 0.12);
+    });
+  }
+
+  /** Speed breaker: a dull double knock. */
+  bump(): void {
+    this.play((c, t, out) => {
+      this.tone(c, t, out, 'sine', 110, 60, 0.12, 0.6);
+      this.tone(c, t + 0.12, out, 'sine', 95, 55, 0.12, 0.45);
+      this.noiseBurst(c, t, out, 0.1, 300, 0.4);
+    });
+  }
+
   /** Countdown beep; `go` is the higher final beep. */
   beep(go: boolean): void {
     this.play((c, t, out) => this.tone(c, t, out, 'square', go ? 880 : 520, go ? 880 : 520, go ? 0.3 : 0.12, 0.12));

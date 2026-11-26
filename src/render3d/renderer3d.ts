@@ -3,13 +3,21 @@ import { BALANCE as B } from '../data/balance';
 import { laneCenter } from '../systems/collision';
 import type { World } from '../systems/world';
 import type { GraphicsQuality } from '../storage/save';
-import type { GameRenderer } from '../render/types';
-import { buildBlock, CHUNK_M, MUMBAI, ROAD_W, roadTexture, type CityStyle } from './city';
-import { buildAuto, buildPotholeShapes, type PotholeShape } from './models';
+import type { GameRenderer, ViewMode } from '../render/types';
+import { MAPS, type MapDef } from '../data/maps';
+import { ObstacleKind } from '../data/obstacles';
+import { buildBlock, CHUNK_M, poolTexture, roadTexture, type BlockGeometry } from './city';
+import { buildAuto, type PotholeShape } from './models';
+import { buildObstacleGeos, playerVehicleGeo } from './props';
+import { VEHICLES, type VehicleId } from '../data/vehicles';
+import { createSignAtlas, type SignAtlas } from './signs';
+import { Ambient } from './ambient';
 
 const BLOCK_VARIANTS = 6;
 const CHUNK_POOL = 8;
 const PARTICLES = 90;
+const RAIN_MAX = 700;
+const SNOW_MAX = 520;
 const POPUPS = 8;
 /** The 3D camera sees further up the road than the 2D view, so rows are spawned further ahead. */
 const VIEW_AHEAD = 46;
@@ -32,6 +40,9 @@ function roadVariant(k: number): number {
 interface Chunk {
   k: number;
   block: THREE.Mesh;
+  glow: THREE.Mesh;
+  pools: THREE.Mesh;
+  signs: THREE.Mesh;
   road: THREE.Mesh;
 }
 
@@ -41,6 +52,7 @@ interface PotholeMesh {
   hole: THREE.Mesh;
   deep: THREE.Mesh;
   water: THREE.Mesh;
+  prop: THREE.Mesh;
 }
 
 /** 2.5D isometric view: a low-poly 3D street under an angled camera. */
@@ -50,13 +62,37 @@ export class Renderer3D implements GameRenderer {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(38, 1, 0.5, 400);
   private readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
+  private readonly headlight: THREE.SpotLight;
   private readonly ground: THREE.Mesh;
   private readonly chunks: Chunk[] = [];
-  private readonly blockGeos: THREE.BufferGeometry[] = [];
-  private readonly roadMats: THREE.MeshLambertMaterial[] = [];
+  private blockGeos: BlockGeometry[] = [];
+  private roadMats: THREE.MeshLambertMaterial[] = [];
+  private readonly roadGeo: THREE.PlaneGeometry;
+  private readonly glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  private readonly poolMat: THREE.MeshBasicMaterial;
+  private readonly propMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  private obstacleGeos: THREE.BufferGeometry[][] = [];
+  private readonly coinMeshes: THREE.Mesh[] = [];
+  private readonly rain: THREE.LineSegments;
+  private readonly rainPos: Float32Array;
+  private rainCount = 0;
+  private readonly snow: THREE.Points;
+  private readonly snowPos: Float32Array;
+  private readonly snowPhase = new Float32Array(SNOW_MAX);
+  private map: MapDef = MAPS.mumbai;
+  private readonly atlas: SignAtlas;
+  private readonly ambient: Ambient;
+  private readonly signMat: THREE.MeshLambertMaterial;
+  /** Shared clock for the wind shader. */
+  private readonly windTime = { value: 0 };
+  private tailMat: THREE.MeshLambertMaterial | null = null;
+  private pitch = 0;
+  private roadW = 9;
   private readonly potholes: PotholeMesh[] = [];
   private readonly shapes: PotholeShape[][];
-  private readonly auto: THREE.Group;
+  private auto: THREE.Group;
+  private vehicleId: VehicleId = 'auto';
   private readonly pX = new Float32Array(PARTICLES);
   private readonly pY = new Float32Array(PARTICLES);
   private readonly pH = new Float32Array(PARTICLES);
@@ -85,7 +121,7 @@ export class Renderer3D implements GameRenderer {
   private puff = 0;
   private smoke = 0;
 
-  constructor(canvas: HTMLCanvasElement, private readonly world: World, quality: GraphicsQuality, style: CityStyle = MUMBAI) {
+  constructor(canvas: HTMLCanvasElement, private readonly world: World, quality: GraphicsQuality, map: MapDef = MAPS.mumbai) {
     this.quality = quality;
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: quality === 'high', powerPreference: 'high-performance' });
     this.gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -93,11 +129,9 @@ export class Renderer3D implements GameRenderer {
     this.gl.shadowMap.type = THREE.PCFShadowMap;
     world.viewAhead = VIEW_AHEAD;
 
-    // Warm, hazy Mumbai evening.
-    const sky = new THREE.Color('#e8c7a2');
-    this.scene.background = sky;
-    this.scene.fog = new THREE.Fog(sky, 40, 110);
-    this.scene.add(new THREE.HemisphereLight('#ffe7c4', '#6d5a46', 1.6));
+    this.scene.fog = new THREE.Fog('#000000', 40, 110);
+    this.hemi = new THREE.HemisphereLight('#ffe7c4', '#6d5a46', 1.6);
+    this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#ffd6a0', 2.6);
     this.sun.shadow.camera.left = -26;
     this.sun.shadow.camera.right = 26;
@@ -109,56 +143,127 @@ export class Renderer3D implements GameRenderer {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
 
-    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshLambertMaterial({ color: style.ground }));
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshLambertMaterial({ color: '#a99273' }));
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -0.03;
     this.scene.add(this.ground);
 
-    // Street blocks: a few designs, reused as the road scrolls.
+    // Street blocks: a few designs per map, reused as the road scrolls.
     const blockMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    for (let i = 0; i < BLOCK_VARIANTS; i++) this.blockGeos.push(buildBlock(style, 1000 + i * 77));
-    const aniso = this.gl.capabilities.getMaxAnisotropy();
-    for (let i = 0; i < 4; i++) {
-      const tex = new THREE.CanvasTexture(roadTexture(world.laneCount, i === 3, 50 + i));
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = Math.min(8, aniso);
-      this.roadMats.push(new THREE.MeshLambertMaterial({ map: tex }));
-    }
-    const roadGeo = new THREE.PlaneGeometry(ROAD_W, CHUNK_M);
-    roadGeo.rotateX(-Math.PI / 2);
-    roadGeo.translate(0, 0, -CHUNK_M / 2);
+    // Breeze: leaves and bunting carry a 'sway' weight and move with a gentle, uneven wind.
+    blockMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = this.windTime;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          if (sway > 0.0) {
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            float gust = 0.6 + 0.4 * sin(uTime * 0.35 + wp.z * 0.02);
+            float ph = uTime * 1.7 + wp.x * 0.35 + wp.z * 0.23;
+            transformed.x += sway * gust * (sin(ph) * 0.16 + sin(ph * 2.3) * 0.05);
+            transformed.z += sway * gust * cos(ph * 0.8) * 0.09;
+            transformed.y += sway * gust * sin(ph * 1.3) * 0.04;
+          }`,
+        );
+    };
+    this.atlas = createSignAtlas();
+    this.ambient = new Ambient(this.scene);
+    this.signMat = new THREE.MeshLambertMaterial({ map: this.atlas.texture, side: THREE.DoubleSide });
+    this.poolMat = new THREE.MeshBasicMaterial({
+      map: poolTexture(), vertexColors: true, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this.roadGeo = new THREE.PlaneGeometry(9, CHUNK_M);
+    const empty = new THREE.BufferGeometry();
     for (let i = 0; i < CHUNK_POOL; i++) {
-      const block = new THREE.Mesh(this.blockGeos[0], blockMat);
+      const block = new THREE.Mesh(empty, blockMat);
       block.castShadow = true;
       block.receiveShadow = true;
-      const road = new THREE.Mesh(roadGeo, this.roadMats[0]);
+      const glow = new THREE.Mesh(empty, this.glowMat);
+      const pools = new THREE.Mesh(empty, this.poolMat);
+      pools.renderOrder = 2;
+      const signs = new THREE.Mesh(empty, this.signMat);
+      signs.receiveShadow = true;
+      const road = new THREE.Mesh(this.roadGeo, blockMat);
       road.receiveShadow = true;
-      this.scene.add(block, road);
-      this.chunks.push({ k: -999, block, road });
+      this.scene.add(block, glow, pools, signs, road);
+      this.chunks.push({ k: -999, block, glow, pools, signs, road });
     }
 
-    // Potholes: one mesh set per obstacle slot in the world's pool.
-    this.shapes = buildPotholeShapes();
+    // Obstacles: pothole meshes plus one prop mesh per slot in the world's pool.
+    // Potholes are now built like the other obstacles (see props.ts); these slots stay empty.
+    this.shapes = [];
     const rimMat = new THREE.MeshLambertMaterial({ color: '#77716a' });
     const holeMat = new THREE.MeshLambertMaterial({ color: '#2b241e' });
     const deepMat = new THREE.MeshLambertMaterial({ color: '#130f0c' });
     const waterMat = new THREE.MeshLambertMaterial({ color: '#7d8a8c', transparent: true, opacity: 0.6 });
-    const first = this.shapes[0]![0]!;
     for (let i = 0; i < world.obstacles.length; i++) {
       const group = new THREE.Group();
-      const rim = new THREE.Mesh(first.rim, rimMat);
-      const hole = new THREE.Mesh(first.hole, holeMat);
-      const deep = new THREE.Mesh(first.deep, deepMat);
-      const water = new THREE.Mesh(first.rim, waterMat);
+      const rim = new THREE.Mesh(empty, rimMat);
+      const hole = new THREE.Mesh(empty, holeMat);
+      const deep = new THREE.Mesh(empty, deepMat);
+      const water = new THREE.Mesh(empty, waterMat);
+      const prop = new THREE.Mesh(empty, this.propMat);
+      prop.castShadow = true;
+      prop.receiveShadow = true;
       for (const m of [rim, hole, deep, water]) m.receiveShadow = true;
-      group.add(rim, hole, deep, water);
+      group.add(rim, hole, deep, water, prop);
       group.visible = false;
       this.scene.add(group);
-      this.potholes.push({ group, rim, hole, deep, water });
+      this.potholes.push({ group, rim, hole, deep, water, prop });
     }
 
-    this.auto = buildAuto();
+    // Coins: gold discs standing on edge.
+    const coinGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.09, 18);
+    coinGeo.rotateX(Math.PI / 2);
+    const coinMat = new THREE.MeshLambertMaterial({ color: '#ffc21a', emissive: '#7a5200', emissiveIntensity: 0.8 });
+    const rimGeo = new THREE.TorusGeometry(0.4, 0.05, 6, 18);
+    const rimCoinMat = new THREE.MeshLambertMaterial({ color: '#e09a00', emissive: '#5a3a00' });
+    for (let i = 0; i < world.coins.length; i++) {
+      const m = new THREE.Mesh(coinGeo, coinMat);
+      m.add(new THREE.Mesh(rimGeo, rimCoinMat));
+      m.castShadow = true;
+      m.visible = false;
+      this.scene.add(m);
+      this.coinMeshes.push(m);
+    }
+
+    // Rain: short streaks that fall around the camera's target.
+    this.rainPos = new Float32Array(RAIN_MAX * 6);
+    const rainGeo = new THREE.BufferGeometry();
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(this.rainPos, 3));
+    this.rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: '#b8cbe6', transparent: true, opacity: 0.5 }));
+    this.rain.frustumCulled = false;
+    this.scene.add(this.rain);
+
+    // Snow: round soft points.
+    this.snowPos = new Float32Array(SNOW_MAX * 3);
+    const snowGeo = new THREE.BufferGeometry();
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(this.snowPos, 3));
+    const flake = document.createElement('canvas');
+    flake.width = flake.height = 32;
+    const fctx = flake.getContext('2d')!;
+    const fg = fctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    fg.addColorStop(0, 'rgba(255,255,255,1)');
+    fg.addColorStop(0.5, 'rgba(255,255,255,0.7)');
+    fg.addColorStop(1, 'rgba(255,255,255,0)');
+    fctx.fillStyle = fg;
+    fctx.fillRect(0, 0, 32, 32);
+    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({
+      size: 0.32, map: new THREE.CanvasTexture(flake), transparent: true, depthWrite: false, color: '#f4f6ff',
+    }));
+    this.snow.frustumCulled = false;
+    this.snow.visible = false;
+    this.scene.add(this.snow);
+
+    this.headlight = new THREE.SpotLight('#fff1c8', 0, 34, 0.55, 0.65, 1.1);
+    this.scene.add(this.headlight, this.headlight.target);
+
+    this.auto = this.buildVehicle('auto');
     this.scene.add(this.auto);
+    this.setMap(map);
 
     for (let i = 0; i < PARTICLES; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ color: '#ffffff', transparent: true, depthWrite: false }));
@@ -179,6 +284,175 @@ export class Renderer3D implements GameRenderer {
       this.popEls.push(el);
     }
     this.setQuality(quality);
+  }
+
+  /** Builds the player's vehicle: the detailed auto, or a merged low-poly model with brake lights. */
+  private buildVehicle(id: VehicleId): THREE.Group {
+    let g: THREE.Group;
+    if (id === 'auto') {
+      g = buildAuto();
+    } else {
+      g = new THREE.Group();
+      const body = new THREE.Mesh(playerVehicleGeo(id), this.propMat);
+      body.castShadow = true;
+      g.add(body);
+      const def = VEHICLES[id];
+      const tail = new THREE.MeshLambertMaterial({ color: '#7a1410', emissive: '#ff2a1a', emissiveIntensity: 0.7, name: 'tail' });
+      const two = def.width > 1.2;
+      const lampGeo = new THREE.BoxGeometry(two ? 0.3 : 0.16, 0.1, 0.04);
+      for (const x of two ? [-def.width / 2 + 0.25, def.width / 2 - 0.25] : [0]) {
+        const lamp = new THREE.Mesh(lampGeo, tail);
+        lamp.position.set(x, two ? 0.78 : 0.9, def.length / 2 + 0.02);
+        g.add(lamp);
+      }
+    }
+    this.tailMat = null;
+    g.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+      if (m && m.name === 'tail') this.tailMat = m;
+    });
+    return g;
+  }
+
+  /** Swaps the player's vehicle model. */
+  setVehicle(id: VehicleId): void {
+    if (id === this.vehicleId) return;
+    const old = this.vehicleId;
+    this.vehicleId = id;
+    this.scene.remove(this.auto);
+    if (old !== 'auto') {
+      this.auto.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) mesh.geometry.dispose();
+      });
+    }
+    this.auto = this.buildVehicle(id);
+    this.scene.add(this.auto);
+  }
+
+  /** Rebuilds the street, lighting and weather for a map. Takes a moment, so call it between runs. */
+  setMap(map: MapDef): void {
+    this.map = map;
+    this.roadW = this.world.roadWidth;
+    for (const g of this.blockGeos) {
+      g.main.dispose();
+      g.glow.dispose();
+      g.pools.dispose();
+      g.signs.dispose();
+    }
+    for (const m of this.roadMats) {
+      m.map?.dispose();
+      m.dispose();
+    }
+    for (const list of this.obstacleGeos) for (const g of list ?? []) g.dispose();
+    this.blockGeos = [];
+    this.roadMats = [];
+    const seedBase = map.id.length * 131;
+    for (let i = 0; i < BLOCK_VARIANTS; i++) this.blockGeos.push(buildBlock(map.style, 1000 + i * 77 + seedBase, this.roadW, this.atlas.cells[map.style.signs]));
+    this.obstacleGeos = buildObstacleGeos(this.roadW);
+    const aniso = this.gl.capabilities.getMaxAnisotropy();
+    const wet = map.weather === 'rain' ? '#a3a9b8' : map.weather === 'drizzle' ? '#c4c6cc' : map.weather === 'snow' ? '#d6d9e0' : '#ffffff';
+    for (let i = 0; i < 4; i++) {
+      const tex = new THREE.CanvasTexture(roadTexture(this.world.laneCount, this.roadW, i === 3, 50 + i, map.style.busLane));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Math.min(8, aniso);
+      this.roadMats.push(new THREE.MeshLambertMaterial({ map: tex, color: wet }));
+    }
+    this.roadGeo.dispose();
+    const roadGeo = new THREE.PlaneGeometry(this.roadW, CHUNK_M);
+    roadGeo.rotateX(-Math.PI / 2);
+    roadGeo.translate(0, 0, -CHUNK_M / 2);
+    for (const c of this.chunks) {
+      c.road.geometry = roadGeo;
+      c.k = -999;
+    }
+
+    // Light and mood.
+    const L = map.light;
+    const sky = new THREE.Color(L.sky);
+    this.scene.background = sky;
+    (this.scene.fog as THREE.Fog).color.copy(sky);
+    this.hemi.color.set(L.hemiSky);
+    this.hemi.groundColor.set(L.hemiGround);
+    this.hemi.intensity = L.hemi;
+    this.sun.color.set(L.sun);
+    this.sun.intensity = L.sunIntensity;
+    this.gl.toneMappingExposure = L.exposure;
+    (this.ground.material as THREE.MeshLambertMaterial).color.set(map.style.ground);
+    this.glowMat.color.set(L.night ? '#ffffff' : '#c9c4b8');
+    this.poolMat.opacity = L.night ? 0.38 : 0;
+    for (const c of this.chunks) c.pools.visible = L.night;
+    this.headlight.intensity = L.night ? 140 : 0;
+    this.ambient.configure(L.night, map.weather === 'rain');
+    this.rainCount = map.weather === 'rain' ? RAIN_MAX : map.weather === 'drizzle' ? 260 : 0;
+    this.rain.visible = this.rainCount > 0;
+    this.rain.geometry.setDrawRange(0, this.rainCount * 2);
+    for (let i = 0; i < this.rainCount; i++) this.resetDrop(i, Math.random() * 18);
+    this.snow.visible = map.weather === 'snow';
+    if (this.snow.visible) for (let i = 0; i < SNOW_MAX; i++) this.resetFlake(i, Math.random() * 16);
+  }
+
+  private resetDrop(i: number, y: number): void {
+    const p = this.rainPos;
+    const x = (Math.random() - 0.5) * 30;
+    const z = (Math.random() - 0.5) * 50;
+    p[i * 6] = x;
+    p[i * 6 + 1] = y;
+    p[i * 6 + 2] = z;
+    p[i * 6 + 3] = x + 0.12;
+    p[i * 6 + 4] = y + 0.75;
+    p[i * 6 + 5] = z - 0.1;
+  }
+
+  private resetFlake(i: number, y: number): void {
+    const p = this.snowPos;
+    p[i * 3] = (Math.random() - 0.5) * 34;
+    p[i * 3 + 1] = y;
+    p[i * 3 + 2] = (Math.random() - 0.5) * 54;
+    this.snowPhase[i] = Math.random() * 6.28;
+  }
+
+  /** Snow drifts down slowly and sways; it is drawn as soft round points. */
+  private updateSnow(dt: number, cx: number, cz: number): void {
+    if (!this.snow.visible) return;
+    const p = this.snowPos;
+    for (let i = 0; i < SNOW_MAX; i++) {
+      const ph = this.snowPhase[i]!;
+      p[i * 3] = p[i * 3]! + Math.sin(this.time * 1.3 + ph) * 0.6 * dt - 0.4 * dt;
+      p[i * 3 + 1] = p[i * 3 + 1]! - (1.3 + (ph % 1)) * dt;
+      p[i * 3 + 2] = p[i * 3 + 2]! + Math.cos(this.time * 0.9 + ph) * 0.3 * dt;
+      if (p[i * 3 + 1]! < 0) this.resetFlake(i, 14 + Math.random() * 3);
+    }
+    this.snow.position.set(cx, 0, cz);
+    this.snow.geometry.attributes.position!.needsUpdate = true;
+  }
+
+  private updateRain(dt: number, cx: number, cz: number): void {
+    this.updateSnow(dt, cx, cz);
+    if (this.rainCount === 0) return;
+    const p = this.rainPos;
+    const fall = (this.map.weather === 'rain' ? 24 : 16) * dt;
+    for (let i = 0; i < this.rainCount; i++) {
+      p[i * 6 + 1] = p[i * 6 + 1]! - fall;
+      p[i * 6 + 4] = p[i * 6 + 4]! - fall;
+      p[i * 6] = p[i * 6]! - fall * 0.15;
+      p[i * 6 + 3] = p[i * 6 + 3]! - fall * 0.15;
+      if (p[i * 6 + 1]! < 0) this.resetDrop(i, 16 + Math.random() * 4);
+    }
+    this.rain.position.set(cx, 0, cz);
+    this.rain.geometry.attributes.position!.needsUpdate = true;
+  }
+
+  private placeCoins(cam: number): void {
+    const coins = this.world.coins;
+    for (let i = 0; i < coins.length; i++) {
+      const c = coins[i]!;
+      const m = this.coinMeshes[i]!;
+      m.visible = c.active && c.y < cam + VIEW_AHEAD + 10;
+      if (!m.visible) continue;
+      m.position.set(c.x - this.roadW / 2, 0.75 + Math.sin(this.time * 4 + c.y) * 0.1, -c.y);
+      m.rotation.y = this.time * 3 + c.y * 0.4;
+    }
   }
 
   setQuality(q: GraphicsQuality): void {
@@ -257,24 +531,38 @@ export class Renderer3D implements GameRenderer {
     this.pKind[i] = kind;
   }
 
-  draw(alpha: number, frameDt: number, running: boolean, mode: 'menu' | 'game' = 'game'): void {
+  draw(alpha: number, frameDt: number, running: boolean, mode: ViewMode = 'game'): void {
     const { world } = this;
     this.time += frameDt;
+    this.windTime.value = this.time;
     this.shake = Math.max(0, this.shake - frameDt * 30);
     const cam = world.prevDist + (world.dist - world.prevDist) * alpha;
     const lane = world.prevLanePos + (world.lanePos - world.prevLanePos) * alpha;
-    const px = laneCenter(lane) - ROAD_W / 2;
+    const px = laneCenter(lane) - this.roadW / 2;
     const speedK = world.alive ? Math.max(0, Math.min(1, (world.speed - 11) / (B.maxSpeed - 11))) : 0;
     this.speedFx += (speedK - this.speedFx) * Math.min(1, frameDt * 3);
 
     this.placeChunks(cam);
+    // The garage is a clean showroom on the road: the buildings step away so the orbiting camera never clips them.
+    const street = mode !== 'garage';
+    if (this.chunks[0]!.block.visible !== street) {
+      for (const c of this.chunks) {
+        c.block.visible = c.glow.visible = c.signs.visible = street;
+        c.pools.visible = street && this.map.light.night;
+      }
+    }
     this.placePotholes(cam);
+    this.placeCoins(cam);
 
     // The auto: steer yaw, body roll, engine bounce, spin-out after the crash.
     const steer = world.targetLane - lane;
     const crashK = world.alive ? 0 : 1 - Math.pow(1 - Math.min(1, world.crashT / 1.1), 3);
     this.auto.position.set(px, running && world.alive ? Math.abs(Math.sin(this.time * 20)) * 0.035 : 0, -cam);
-    this.auto.rotation.set(0, world.alive ? -steer * 0.4 : crashK * 2.7 * this.crashDir, world.alive ? steer * 0.08 : 0);
+    // Nose dips when braking and lifts when boosting.
+    const pitchWant = world.alive ? (world.throttle < 0 ? -0.05 : world.throttle > 0 ? 0.035 : 0) : 0;
+    this.pitch += (pitchWant - this.pitch) * Math.min(1, frameDt * 8);
+    this.auto.rotation.set(-this.pitch, world.alive ? -steer * 0.4 : crashK * 2.7 * this.crashDir, world.alive ? steer * 0.08 : 0);
+    if (this.tailMat) this.tailMat.emissiveIntensity = world.throttle < 0 && world.alive ? 3 : 0.7;
     this.auto.visible = !(world.invuln > 0 && world.alive && Math.floor(this.time * 14) % 2 === 0);
 
     // Exhaust while driving, smoke after the crash.
@@ -294,7 +582,14 @@ export class Renderer3D implements GameRenderer {
     }
     this.updateParticles(frameDt);
 
+    if (this.headlight.intensity > 0) {
+      const yaw = this.auto.rotation.y;
+      this.headlight.position.set(px - Math.sin(yaw) * 1.4, 1.0, -cam - 1.4);
+      this.headlight.target.position.set(px - Math.sin(yaw) * 14, 0, -cam - 14);
+    }
     this.placeCamera(cam, px, mode);
+    this.updateRain(frameDt, px, -cam - 10);
+    this.ambient.update(frameDt, 0, -cam - 10, this.roadW / 2);
     this.placeSun(px, cam);
     this.gl.render(this.scene, this.camera);
     this.updatePopups(cam, frameDt);
@@ -306,10 +601,13 @@ export class Renderer3D implements GameRenderer {
       const c = this.chunks[((k % CHUNK_POOL) + CHUNK_POOL) % CHUNK_POOL]!;
       if (c.k === k) continue;
       c.k = k;
-      c.block.geometry = this.blockGeos[blockVariant(k)]!;
+      const g = this.blockGeos[blockVariant(k)]!;
+      c.block.geometry = g.main;
+      c.glow.geometry = g.glow;
+      c.pools.geometry = g.pools;
+      c.signs.geometry = g.signs;
       c.road.material = this.roadMats[roadVariant(k)]!;
-      c.block.position.z = -k * CHUNK_M;
-      c.road.position.z = -k * CHUNK_M;
+      for (const m of [c.block, c.glow, c.pools, c.signs, c.road]) m.position.z = -k * CHUNK_M;
     }
     this.ground.position.z = -cam;
   }
@@ -323,18 +621,46 @@ export class Renderer3D implements GameRenderer {
       m.group.visible = show;
       if (!show) continue;
       const shape = this.shapes[o.kind]?.[o.variant];
-      if (!shape) continue;
-      m.rim.geometry = shape.rim;
-      m.hole.geometry = shape.hole;
-      m.deep.geometry = shape.deep;
-      m.water.visible = shape.water !== null;
-      if (shape.water) m.water.geometry = shape.water;
-      m.group.position.set(o.x - ROAD_W / 2, 0, -o.y);
+      const isHole = shape !== undefined;
+      m.rim.visible = m.hole.visible = m.deep.visible = isHole;
+      m.water.visible = isHole && shape.water !== null;
+      m.prop.visible = !isHole;
+      if (shape) {
+        m.rim.geometry = shape.rim;
+        m.hole.geometry = shape.hole;
+        m.deep.geometry = shape.deep;
+        if (shape.water) m.water.geometry = shape.water;
+      } else {
+        m.prop.geometry = this.obstacleGeos[o.kind]?.[o.variant] ?? m.prop.geometry;
+      }
+      m.group.position.set(o.x - this.roadW / 2, 0, -o.y);
+      // Cows stand at an angle; bikes wobble a little.
+      let ry = 0;
+      if (o.kind === ObstacleKind.Cow) ry = ((o.variant * 7 + Math.floor(o.y)) % 5) * 0.35 - 0.7;
+      else if (o.kind === ObstacleKind.Biker || o.kind === ObstacleKind.DeliveryBike) ry = Math.sin(this.time * 3 + o.y) * 0.05;
+      m.group.rotation.y = ry;
     }
   }
 
-  private placeCamera(cam: number, px: number, mode: 'menu' | 'game'): void {
+  private placeCamera(cam: number, px: number, mode: ViewMode): void {
     const c = this.camera;
+    if (mode === 'garage') {
+      // Slow orbit close around the vehicle, framed in the top half of the screen (the cards sit below).
+      c.fov = 34;
+      c.updateProjectionMatrix();
+      const a = 0.6 + this.time * 0.35;
+      // Far enough that the whole vehicle fits across the screen, even on a tall phone.
+      const len = VEHICLES[this.vehicleId].length;
+      const halfW = c.aspect < 1 ? len * 0.6 + 0.8 : len * 0.9 + 1.5;
+      const d = Math.max(6.5, halfW / (Math.tan((c.fov * Math.PI) / 360) * Math.min(c.aspect, 1.3)));
+      c.position.set(px + Math.sin(a) * d, d * (c.aspect < 1 ? 0.42 : 0.62), -cam + Math.cos(a) * d);
+      // On a phone the card covers the lower half, so aim below the vehicle to lift it up the screen.
+      c.lookAt(px, c.aspect < 1 ? -d * 0.2 : -d * 0.16, -cam);
+      const fog = this.scene.fog as THREE.Fog;
+      fog.near = 30;
+      fog.far = 90;
+      return;
+    }
     const menu = mode === 'menu';
     c.fov = menu ? 34 : 38 + this.speedFx * 9;
     c.updateProjectionMatrix();
@@ -343,7 +669,7 @@ export class Renderer3D implements GameRenderer {
     const elev = menu ? 0.82 : 0.92;
     // Pull back far enough that the road plus its footpaths fill the width on narrow phones.
     const halfH = Math.tan((c.fov * Math.PI) / 360);
-    const needW = menu ? 17 : 13.5;
+    const needW = (menu ? 17 : 13.5) + (this.roadW - 9);
     let dist = needW / 2 / (halfH * c.aspect);
     const wide = c.aspect > 1;
     dist = Math.max(menu ? 22 : wide ? 24 : 19, Math.min(menu ? 40 : 44, dist));
@@ -356,8 +682,9 @@ export class Renderer3D implements GameRenderer {
     }
     c.lookAt(lookX, 0, lookZ);
     const fog = this.scene.fog as THREE.Fog;
-    fog.near = dist + 18;
-    fog.far = dist + 75;
+    const f = this.map.fog;
+    fog.near = dist + 18 * f - (1 - f) * 10;
+    fog.far = dist + 75 * f;
   }
 
   private placeSun(px: number, cam: number): void {
@@ -386,7 +713,7 @@ export class Renderer3D implements GameRenderer {
       const k = Math.max(0, life / this.pMax[i]!);
       const size = this.pSize[i]! * (rising ? 1 + (1 - k) * 2.5 : 1);
       s.visible = life > 0;
-      s.position.set(this.pX[i]! - ROAD_W / 2, this.pH[i]!, -this.pY[i]!);
+      s.position.set(this.pX[i]! - this.roadW / 2, this.pH[i]!, -this.pY[i]!);
       s.scale.set(size, size, size);
       const m = s.material;
       m.color.set(PARTICLE_COLOURS[kind]!);
@@ -405,7 +732,7 @@ export class Renderer3D implements GameRenderer {
         el.hidden = true;
         continue;
       }
-      this.tmp.set(this.popX[i]! - ROAD_W / 2, 2.4, -Math.max(this.popY[i]!, cam - 2)).project(this.camera);
+      this.tmp.set(this.popX[i]! - this.roadW / 2, 2.4, -Math.max(this.popY[i]!, cam - 2)).project(this.camera);
       const x = Math.max(70, Math.min(this.w - 70, (this.tmp.x * 0.5 + 0.5) * this.w));
       const y = (-this.tmp.y * 0.5 + 0.5) * this.h - (1 - life) * 50;
       el.style.transform = `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${life > 0.85 ? 1 + (life - 0.85) * 2 : 1})`;

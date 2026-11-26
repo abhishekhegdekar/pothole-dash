@@ -1,5 +1,5 @@
 /** Versioned save data. Reads are validated; old versions are migrated, bad data is reset, never thrown. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 const KEY = 'pothole-dash.save';
 
 export type GraphicsQuality = 'high' | 'low';
@@ -23,6 +23,13 @@ export interface SaveData {
   points: number;
   scrap: number;
   settings: Settings;
+  /** Free Run maps and vehicles the player owns, and the current picks. */
+  ownedMaps: string[];
+  selectedMap: string;
+  ownedVehicles: string[];
+  selectedVehicle: string;
+  /** Best score on each map. */
+  bestByMap: Record<string, number>;
 }
 
 export interface StorageLike {
@@ -41,6 +48,11 @@ export function defaultSave(): SaveData {
     points: 0,
     scrap: 0,
     settings: { vibration: true, graphics: 'high', musicVol: 0.7, sfxVol: 0.9 },
+    ownedMaps: ['mumbai', 'thane'],
+    selectedMap: 'mumbai',
+    ownedVehicles: ['auto'],
+    selectedVehicle: 'auto',
+    bestByMap: {},
   };
 }
 
@@ -65,8 +77,24 @@ export function parseSave(raw: string | null): SaveData {
     d.v = 2;
   }
   if (d.v === 2) d.v = 3;
+  // v3 had no maps or vehicles: old best score counts for Mumbai, the original street.
+  if (d.v === 3) {
+    d.bestByMap = { mumbai: d.bestScore };
+    d.v = 4;
+  }
   if (d.v !== SAVE_VERSION) return defaultSave();
 
+  const def = defaultSave();
+  const ids = (x: unknown, base: string[]): string[] => {
+    const list = Array.isArray(x) ? x.filter((v): v is string => typeof v === 'string' && v.length < 40) : [];
+    return [...new Set([...base, ...list])];
+  };
+  const ownedMaps = ids(d.ownedMaps, def.ownedMaps);
+  const ownedVehicles = ids(d.ownedVehicles, def.ownedVehicles);
+  const best: Record<string, number> = {};
+  if (typeof d.bestByMap === 'object' && d.bestByMap !== null) {
+    for (const [k, v] of Object.entries(d.bestByMap as Record<string, unknown>)) if (k.length < 40) best[k] = int(v);
+  }
   const s = (typeof d.settings === 'object' && d.settings !== null ? d.settings : {}) as Record<string, unknown>;
   return {
     v: SAVE_VERSION,
@@ -83,6 +111,12 @@ export function parseSave(raw: string | null): SaveData {
       musicVol: vol(s.musicVol, 0.7),
       sfxVol: vol(s.sfxVol, 0.9),
     },
+    ownedMaps,
+    selectedMap: typeof d.selectedMap === 'string' && ownedMaps.includes(d.selectedMap) ? d.selectedMap : def.selectedMap,
+    ownedVehicles,
+    selectedVehicle:
+      typeof d.selectedVehicle === 'string' && ownedVehicles.includes(d.selectedVehicle) ? d.selectedVehicle : def.selectedVehicle,
+    bestByMap: best,
   };
 }
 
