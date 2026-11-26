@@ -612,7 +612,9 @@ export class Renderer3D implements GameRenderer {
 
     // The auto: steer yaw, body roll, engine bounce, spin-out after the crash.
     const steer = world.targetLane - lane;
-    const crashK = world.alive ? 0 : 1 - Math.pow(1 - Math.min(1, world.crashT / 1.1), 3);
+    // Only a wreck spins and smokes; running dry or arriving just rolls to a stop.
+    const wrecked = !world.alive && world.endReason === 'wreck';
+    const crashK = !wrecked ? 0 : 1 - Math.pow(1 - Math.min(1, world.crashT / 1.1), 3);
     this.auto.position.set(px, running && world.alive ? Math.abs(Math.sin(this.time * 20)) * 0.035 : 0, -cam);
     // Nose dips when braking and lifts when boosting.
     const pitchWant = world.alive ? (world.throttle < 0 ? -0.05 : world.throttle > 0 ? 0.035 : 0) : 0;
@@ -629,7 +631,7 @@ export class Renderer3D implements GameRenderer {
         this.spawn(laneCenter(lane) + 0.35, cam - 1.3, 0.35, (Math.random() - 0.5) * 0.4, world.speed * 0.8, 0.6, 0.5, 0.22, EXHAUST);
       }
     }
-    if (!world.alive && world.crashT < 2) {
+    if (wrecked && world.crashT < 2) {
       this.smoke -= frameDt;
       if (this.smoke <= 0) {
         this.smoke = 0.05;

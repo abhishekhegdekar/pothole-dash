@@ -74,8 +74,8 @@
               <span class="mi-sub">Endless drive. Earn coins and points.</span>
             </button>
             <button id="btnStory" class="menu-item" type="button">
-              <span class="mi-name">Story Mode <span class="soon">Test drive</span></span>
-              <span class="mi-sub">The night of the siren. Get out of Mumbai.</span>
+              <span class="mi-name">Story Mode</span>
+              <span id="menuStorySub" class="mi-sub">The night of the siren. Get out of Mumbai.</span>
             </button>
             <button id="btnGarage" class="menu-item" type="button">
               <span class="mi-name">Garage</span>
@@ -168,25 +168,72 @@
             <button id="btnStoryBack" class="icon-btn" type="button" aria-label="Back">
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </button>
-            <h2>Story Mode test</h2>
+            <h2>Story Mode</h2>
           </div>
-          <p class="lede story-lede">The full story arrives chapter by chapter. Try the two halves of it now.</p>
+          <p class="lede story-lede">Raj, Tanvi and Lara have 72 hours to reach a survivor camp. Every drive and every stop counts.</p>
           <div class="map-list" role="list">
-            <button id="btnStoryRoad" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #24121a, #6a2a3a)">
-              <span class="mc-cond">Driving · Night</span><span class="mc-name">The road out</span>
-              <span class="mc-tag">Ram zombies, watch the fuel, let the roof gun work.</span>
-              <span class="mc-foot"><span>Raj's SUV</span><span class="mc-go">Drive</span></span>
-            </button>
-            <button id="btnStoryFoot" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #0f1116, #2e4a5a)">
-              <span class="mc-cond">On foot · Supermarket</span><span class="mc-name">Supply run</span>
-              <span class="mc-tag">Find Lara's inhaler and fuel, then get back to the door.</span>
-              <span class="mc-foot"><span>Bat or machete</span><span class="mc-go">Go in</span></span>
+            <button id="btnStoryGo" class="map-card story-main" type="button" role="listitem" style="background: linear-gradient(135deg, #24121a, #6a2a3a)">
+              <span id="storyGoCond" class="mc-cond">Chapter 1 · Siren Night</span><span id="storyGoName" class="mc-name">Start the story</span>
+              <span id="storyGoTag" class="mc-tag">Mumbai, 2:47 in the morning. Every phone in the building screams at once.</span>
+              <span class="mc-foot"><span id="storyGoKm">About 2 hours</span><span id="storyGoBtn" class="mc-go">Play</span></span>
             </button>
             <button id="btnStoryShop" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #2a2418, #6a5530)">
               <span class="mc-cond">Upgrades · Paint</span><span class="mc-name">Tanvi's workshop</span>
               <span class="mc-tag">Spend Free Run points and scrap on the SUV.</span>
               <span class="mc-foot"><span>8 upgrades</span><span class="mc-go">Open</span></span>
             </button>
+            <button id="btnStoryRoad" class="map-card" type="button" role="listitem" style="background: linear-gradient(135deg, #0f1116, #2e4a5a)">
+              <span class="mc-cond">Endless · Night</span><span class="mc-name">Zombie run</span>
+              <span class="mc-tag">No story, no finish line. Ram, shoot and collect scrap for the workshop.</span>
+              <span class="mc-foot"><span>Raj's SUV</span><span class="mc-go">Drive</span></span>
+            </button>
+          </div>
+          <button id="btnStoryReset" class="link-btn story-reset" type="button" hidden>Start the story over</button>
+        </div>
+      </section>
+
+      <section id="scene" class="scene" hidden aria-live="polite">
+        <div id="sceneBg" class="scene-bg"></div>
+        <div id="sceneChapter" class="scene-chapter" hidden><span id="sceneChNum"></span><strong id="sceneChTitle"></strong></div>
+        <div id="scenePlace" class="scene-place"></div>
+        <div class="scene-bottom">
+          <div id="scenePanel" class="scene-panel">
+            <div id="scenePortrait" class="scene-portrait" aria-hidden="true"></div>
+            <div class="scene-text"><span id="sceneWho" class="scene-who"></span><p id="sceneLine" class="scene-line"></p></div>
+          </div>
+          <div id="sceneChoices" class="scene-choices" hidden></div>
+          <div class="scene-actions">
+            <button id="btnSceneSkip" class="link-btn" type="button">Skip scene</button>
+            <span id="sceneTap" class="scene-tap">Tap to continue</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="route" class="overlay route" hidden>
+        <div class="route-panel">
+          <div class="maps-head">
+            <button id="btnRouteBack" class="icon-btn" type="button" aria-label="Back to menu">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <h2 id="routeTitle">Choose a camp</h2>
+            <span class="chip"><span class="chip-dot chip-scrap" aria-hidden="true"></span><span id="routeScrap">0</span></span>
+          </div>
+          <div class="route-body">
+            <div id="routeMap" class="route-map"></div>
+            <div class="route-side">
+              <div id="routeCamps" class="route-camps"></div>
+              <div id="routeNext" class="route-next">
+                <span id="routeChapter" class="rn-chapter"></span>
+                <span id="routeKm" class="rn-km"></span>
+                <span class="rn-label">Next</span>
+                <strong id="routeNextName" class="rn-name"></strong>
+                <span id="routeNextGoal" class="rn-goal"></span>
+                <div class="rn-actions">
+                  <button id="btnRouteGo" class="btn" type="button">Drive</button>
+                  <button id="btnRouteShop" class="link-btn" type="button">Tanvi's workshop</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

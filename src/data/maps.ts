@@ -44,6 +44,8 @@ export interface CityStyle {
   busLane: boolean;
   /** Fire hydrants, newspaper boxes, phone boxes: 'ny' or 'london' street furniture. */
   furniture: 'india' | 'ny' | 'london';
+  /** Open road outside the city: fields and dhabas, a ghat with cliff and valley, or the Konkan coast. */
+  terrain: 'city' | 'highway' | 'ghat' | 'coast';
 }
 
 export interface Lighting {
@@ -114,6 +116,7 @@ const BASE_STYLE: CityStyle = {
   river: false,
   busLane: false,
   furniture: 'india',
+  terrain: 'city',
 };
 
 export const MAPS = {

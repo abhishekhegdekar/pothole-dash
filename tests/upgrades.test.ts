@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { UPGRADES, storyRules, storyVehicle } from '../src/data/upgrades';
 import { VEHICLES } from '../src/data/vehicles';
-import { parseSave } from '../src/storage/save';
+import { SAVE_VERSION, parseSave } from '../src/storage/save';
 import { World } from '../src/systems/world';
 import { STORY_ROAD } from '../src/data/story';
 
@@ -56,7 +56,7 @@ describe('Workshop upgrades', () => {
 
   it('old saves gain an empty workshop; bad levels are clamped', () => {
     const old = parseSave(JSON.stringify({ v: 4, coins: 5, points: 100 }));
-    expect(old.v).toBe(5);
+    expect(old.v).toBe(SAVE_VERSION);
     expect(old.upgrades).toEqual({});
     expect(old.paint).toBe('olive');
     expect(old.weapons).toEqual(['bat']);
